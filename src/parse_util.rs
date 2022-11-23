@@ -41,7 +41,6 @@ where
                 "error for object path {}: {}",
                 path, e
             ))),
-            other => other,
         }
     }
 }
