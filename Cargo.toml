@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = { version = "1.0" }
 clap = { version = "3.2.20", features=["derive"] }
 reqwest = { version="0.11.11", default-features = false, features = ["rustls-tls-native-roots"] }
+rusqlite = { version = "0.28.0", features = ["bundled"] }
 scraper = { version="0.13.0" }
 serde_json = { version="1.0" }
 tokio = { version = "1.20.1", features=["full"] }
