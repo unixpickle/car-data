@@ -1,23 +1,6 @@
-use scraper::{ElementRef, Html, Selector};
+use scraper::ElementRef;
 use serde_json::Value;
 use std::{collections::HashMap, fmt::Write};
-
-pub fn extract_elem<'a>(doc: &'a Html, selector: &str) -> anyhow::Result<ElementRef<'a>> {
-    let objs: Vec<_> = doc.select(&Selector::parse(selector).unwrap()).collect();
-    if objs.len() != 1 {
-        Err(anyhow::Error::msg(format!(
-            "expected 1 element but got {} for selector {:?}",
-            objs.len(),
-            selector
-        )))
-    } else {
-        Ok(objs.into_iter().next().unwrap())
-    }
-}
-
-pub fn extract_text(doc: Html, selector: &str) -> anyhow::Result<String> {
-    return extract_elem(&doc, selector).map(|x| inner_text(&x));
-}
 
 pub fn inner_text(obj: &ElementRef) -> String {
     let mut result = String::new();
