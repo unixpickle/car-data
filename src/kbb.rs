@@ -192,7 +192,7 @@ impl Request for ListingRequest {
                 return Err(anyhow::Error::msg("no title heading found on listing page"));
             }
 
-            let doc_info = extract_doc_json(&text)?;
+            let doc_info = extract_doc_json(&doc)?;
 
             Ok(Some(Listing {
                 title: inner_text(&titles[0]),
@@ -290,17 +290,16 @@ impl Request for ListingRequest {
     }
 }
 
-fn extract_doc_json(contents: &str) -> anyhow::Result<serde_json::Value> {
+fn extract_doc_json(body: &Html) -> anyhow::Result<serde_json::Value> {
     let preamble = "window.__BONNET_DATA__=";
-    if let Some(index) = contents.find(preamble) {
-        let mut suffix = &contents[index + preamble.len()..];
-        if let Some(index) = suffix.find("</script>") {
-            suffix = &suffix[..index];
+    for x in body.select(&Selector::parse("script").unwrap()) {
+        let contents = inner_text(&x);
+        if !contents.starts_with(preamble) {
+            continue;
         }
-        Ok(serde_json::from_str(suffix)?)
-    } else {
-        Err(anyhow::Error::msg("could not find JSON data in document"))
+        return Ok(serde_json::from_str(&contents[preamble.len()..])?);
     }
+    Err(anyhow::Error::msg("could not find JSON data in document"))
 }
 
 fn vec_into_first<T>(list: Vec<T>) -> Option<T> {
