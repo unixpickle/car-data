@@ -4,6 +4,7 @@ use crate::kbb::{Client, ListingRequest};
 
 mod kbb;
 mod parse_util;
+mod types;
 
 #[tokio::main]
 async fn main() -> ExitCode {

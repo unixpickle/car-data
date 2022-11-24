@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use crate::types::{Listing, OwnerInfo, Price, PriceUnit};
 use std::{collections::HashMap, future::Future, pin::Pin};
 
 use crate::parse_util::{inner_text, FromJSON};
@@ -7,107 +7,6 @@ use scraper::{Html, Selector};
 use serde_json::Value;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[derive(Clone, Debug, Default)]
-pub enum PriceUnit {
-    #[default]
-    Cents,
-}
-
-#[derive(Clone, Debug)]
-pub struct Price {
-    pub value: u64,
-    pub unit: PriceUnit,
-}
-
-impl FromStr for Price {
-    type Err = <f64 as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut processed = s.trim().replace(",", "");
-        let mut unit = PriceUnit::default();
-        if processed.starts_with("$") {
-            unit = PriceUnit::Cents;
-            processed = processed.replace("$", "");
-        }
-        Ok(Price {
-            value: (f64::from_str(&processed)? * 100.0).round() as u64,
-            unit: unit,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub enum DistanceUnit {
-    #[default]
-    Miles,
-}
-
-#[derive(Clone, Debug)]
-pub struct Distance {
-    pub value: u64,
-    pub unit: DistanceUnit,
-}
-
-impl FromStr for Distance {
-    type Err = <f64 as FromStr>::Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut processed = s.trim().replace(",", "");
-        let mut unit = DistanceUnit::default();
-        if processed.ends_with(" mi") {
-            unit = DistanceUnit::Miles;
-            processed = processed.replace(" mi", "");
-        }
-        Ok(Distance {
-            value: (f64::from_str(&processed)?).round() as u64,
-            unit: unit,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Hash)]
-pub enum FeatureCategory {
-    Exterior,
-    Interior,
-    Safety,
-    Mechanical,
-    Technology,
-    Other,
-}
-
-#[derive(Clone, Debug)]
-pub enum DriveType {
-    TwoWheel,
-    FourWheel,
-    Other(String),
-}
-
-#[derive(Clone, Debug)]
-pub struct OwnerInfo {
-    pub id: String,
-    pub name: Option<String>,
-    pub website: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Listing {
-    pub title: String,
-    pub price: Option<Price>,
-    pub make: Option<String>,
-    pub model: Option<String>,
-    pub year: Option<u64>,
-    pub odometer: Option<Distance>,
-    pub engine_description: Option<String>,
-    pub color: Option<String>,
-    pub drive_type: Option<DriveType>,
-    pub fuel_economy: Option<Vec<String>>,
-    pub owners: Option<Vec<OwnerInfo>>,
-    pub vin: Option<String>,
-    pub stock_number: Option<String>,
-    pub comments: Option<String>,
-    pub features: HashMap<FeatureCategory, Vec<String>>,
-}
 
 pub struct Client {
     client: reqwest::Client,
@@ -181,6 +80,7 @@ impl Request for ListingRequest {
         &self,
         resp: Response,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Self::Output>>>> {
+        let id = self.0.clone();
         Box::pin(async {
             let text = resp.text().await?;
             let doc = Html::parse_fragment(&text);
@@ -193,8 +93,14 @@ impl Request for ListingRequest {
             }
 
             let doc_info = extract_doc_json(&doc)?;
+            let inventory_item =
+                <HashMap<String, Value>>::extract_from_json(&doc_info, "initialState.inventory")
+                    .ok()
+                    .and_then(|x| x.into_values().next());
 
             Ok(Some(Listing {
+                website: "kbb.com".to_owned(),
+                website_id: id,
                 title: inner_text(&titles[0]),
                 price: {
                     f64::extract_from_json(
@@ -236,18 +142,41 @@ impl Request for ListingRequest {
                         "initialState.birf.pageData.page.vehicle.odometer",
                     )
                     .ok()
-                    .and_then(|x| Distance::from_str(&x).ok())
+                    .and_then(|x| x.parse().ok())
                 },
-                engine_description: None,
-                color: {
-                    <Vec<String>>::extract_from_json(
-                        &doc_info,
-                        "initialState.birf.pageData.page.vehicle.color",
-                    )
-                    .ok()
-                    .and_then(vec_into_first)
+                engine_description: inventory_item
+                    .as_ref()
+                    .and_then(|x| String::extract_from_json(&x, "engine").ok()),
+                exterior_color: {
+                    inventory_item
+                        .as_ref()
+                        .and_then(|x| String::extract_from_json(&x, "exteriorColorSimple").ok())
+                        .or_else(|| {
+                            <Vec<String>>::extract_from_json(
+                                &doc_info,
+                                "initialState.birf.pageData.page.vehicle.color",
+                            )
+                            .ok()
+                            .and_then(vec_into_first)
+                        })
                 },
-                drive_type: None,
+                interior_color: {
+                    inventory_item
+                        .as_ref()
+                        .and_then(|x| String::extract_from_json(&x, "interiorColorSimple").ok())
+                },
+                drive_type: {
+                    inventory_item
+                        .as_ref()
+                        .and_then(|x| String::extract_from_json(&x, "driveGroup").ok())
+                        .and_then(|x| x.parse().ok())
+                },
+                fuel_type: {
+                    inventory_item
+                        .as_ref()
+                        .and_then(|x| String::extract_from_json(&x, "fuelType").ok())
+                        .and_then(|x| x.parse().ok())
+                },
                 fuel_economy: {
                     <Vec<String>>::extract_from_json(
                         &doc_info,
@@ -283,8 +212,20 @@ impl Request for ListingRequest {
                     "initialState.birf.pageData.page.vehicle.stockNumber",
                 )
                 .ok(),
-                comments: None,
-                features: HashMap::new(),
+                comments: {
+                    inventory_item
+                        .as_ref()
+                        .and_then(|x| {
+                            String::extract_from_json(&x, "additionalInfo.vehicleDescription").ok()
+                        })
+                        .map(|x| x.replace("<br>", "\n"))
+                        .map(|x| inner_text(&Html::parse_fragment(&x).root_element()))
+                },
+                image_urls: {
+                    inventory_item
+                        .as_ref()
+                        .and_then(|x| extract_image_urls(x).ok())
+                },
             }))
         })
     }
@@ -300,6 +241,31 @@ fn extract_doc_json(body: &Html) -> anyhow::Result<serde_json::Value> {
         return Ok(serde_json::from_str(&contents[preamble.len()..])?);
     }
     Err(anyhow::Error::msg("could not find JSON data in document"))
+}
+
+fn extract_image_urls(inventory_item: &Value) -> anyhow::Result<Vec<String>> {
+    let mut raw_result = <Vec<Value>>::extract_from_json(inventory_item, "images.sources")?;
+
+    // Re-order so that the primary image URL is first.
+    if let Ok(primary) = u64::extract_from_json(inventory_item, "images.primary") {
+        let primary = primary as usize;
+        if primary < raw_result.len() {
+            let x = raw_result.remove(primary);
+            raw_result.insert(0, x);
+        }
+    }
+
+    Ok(raw_result
+        .into_iter()
+        .filter_map(|x| String::extract_from_json(&x, "src").ok())
+        .map(|x| {
+            if x.starts_with("//") {
+                format!("https://{}", x)
+            } else {
+                x
+            }
+        })
+        .collect())
 }
 
 fn vec_into_first<T>(list: Vec<T>) -> Option<T> {
