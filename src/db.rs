@@ -137,3 +137,28 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Database;
+
+    #[test]
+    fn attempt_ids() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let db = Database::open_in_memory().await.unwrap();
+            assert_eq!(db.check_attempt("kbb", "123").await.unwrap(), None);
+            assert_eq!(db.check_attempt("kbb", "321").await.unwrap(), None);
+            db.add_failed_attempt("kbb", "123").await.unwrap();
+            assert_eq!(db.check_attempt("kbb", "123").await.unwrap(), Some(false));
+            assert_eq!(db.check_attempt("kbb", "321").await.unwrap(), None);
+            assert_eq!(db.check_attempt("kbb_v2", "123").await.unwrap(), None);
+            db.add_failed_attempt("kbb_v2", "321").await.unwrap();
+            assert_eq!(db.check_attempt("kbb", "123").await.unwrap(), Some(false));
+            assert_eq!(db.check_attempt("kbb", "321").await.unwrap(), None);
+            assert_eq!(
+                db.check_attempt("kbb_v2", "321").await.unwrap(),
+                Some(false)
+            );
+        });
+    }
+}
