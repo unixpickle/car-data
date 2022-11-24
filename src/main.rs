@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use crate::kbb::{Client, ListingRequest};
 
+mod db;
 mod kbb;
 mod parse_util;
 mod types;
