@@ -5,7 +5,10 @@ use std::{
 };
 
 use rusqlite::Connection;
+use sha2::Digest;
 use tokio::task::spawn_blocking;
+
+use crate::types::Listing;
 
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
@@ -69,16 +72,73 @@ impl Database {
         .await
     }
 
+    pub async fn add_listing(&self, listing: Listing) -> anyhow::Result<bool> {
+        self.with_conn(move |conn| {
+            let tx = conn.transaction()?;
+            if tx.execute("INSERT OR IGNORE INTO attempt_ids (website, website_id, success) VALUES (?1, ?2, 1)", (&listing.website, &listing.website_id))? != 1 {
+                return Ok(false);
+            }
+            tx.execute(
+                "INSERT INTO listings (website, website_id, title, price, make, model, year, odometer, engine, exterior_color, interior_color, drive_type, fuel_type, fuel_economy_0, fuel_economy_1, vin, stock_number, comments) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                rusqlite::params![
+                    &listing.website,
+                    &listing.website_id,
+                    &listing.title,
+                    &listing.price,
+                    &listing.make,
+                    &listing.model,
+                    &listing.year,
+                    &listing.odometer,
+                    &listing.engine_description,
+                    &listing.exterior_color,
+                    &listing.interior_color,
+                    &listing.drive_type,
+                    &listing.fuel_type,
+                    &maybe_list_entry(&listing.fuel_economy, 0),
+                    &maybe_list_entry(&listing.fuel_economy, 1),
+                    &listing.vin,
+                    &listing.stock_number,
+                    &listing.comments
+                ],
+            )?;
+            let last_id = tx.last_insert_rowid();
+            if let Some(image_urls) = &listing.image_urls {
+                for (i, image_url) in image_urls.iter().enumerate() {
+                    tx.execute(
+                        "INSERT INTO images (listing_id, image_index, url, hash) VALUES (?1, ?2, ?3, ?4)",
+                        rusqlite::params![&last_id, &i, &image_url, &hash_image_url(&image_url)],
+                    )?;
+                }
+            }
+            if let Some(owners) = &listing.owners {
+                for owner in owners {
+                    tx.execute(
+                        "INSERT INTO owners (listing_id, website_id, name, website) VALUES (?1, ?2, ?3, ?4)",
+                        rusqlite::params![&last_id, &owner.id, &owner.name, &owner.website],
+                    )?;
+                }
+            }
+            tx.commit()?;
+            Ok(true)
+        }).await
+    }
+
     async fn with_conn<
         T: 'static + Send,
-        F: 'static + Send + FnOnce(&Connection) -> anyhow::Result<T>,
+        F: 'static + Send + FnOnce(&mut Connection) -> anyhow::Result<T>,
     >(
         &self,
         f: F,
     ) -> anyhow::Result<T> {
         let conn = self.conn.clone();
-        spawn_blocking(move || f(&conn.lock().unwrap())).await?
+        spawn_blocking(move || f(&mut conn.lock().unwrap())).await?
     }
+}
+
+pub fn hash_image_url(url: &str) -> String {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(url);
+    format!("{:x?}", hasher.finalize())
 }
 
 fn create_tables(conn: &Connection) -> anyhow::Result<()> {
@@ -131,15 +191,21 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
             listing_id     INT not null,
             image_index    INT not null,
             url            TEXT not null,
-            hash           CHAR(32) not null
+            hash           CHAR(64) not null
         )",
         (),
     )?;
     Ok(())
 }
 
+fn maybe_list_entry<T>(x: &Option<Vec<T>>, i: usize) -> Option<&T> {
+    x.as_ref().and_then(|v| v.get(i))
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::types::{Listing, OwnerInfo};
+
     use super::Database;
 
     #[test]
@@ -159,6 +225,45 @@ mod tests {
                 db.check_attempt("kbb_v2", "321").await.unwrap(),
                 Some(false)
             );
+        });
+    }
+
+    #[test]
+    fn add_listing() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let listing = Listing {
+                website: "kbb".to_owned(),
+                website_id: "321".to_owned(),
+                title: "Car Listing".to_owned(),
+                price: Some("$12.98".parse().unwrap()),
+                make: Some("Nissan".to_owned()),
+                model: Some("Altima".to_owned()),
+                year: Some(2019),
+                odometer: Some("52 mi".parse().unwrap()),
+                engine_description: Some("fast boi".to_owned()),
+                exterior_color: Some("Red".to_owned()),
+                interior_color: None,
+                drive_type: Some("RWD".parse().unwrap()),
+                fuel_type: Some("Gasoline".parse().unwrap()),
+                fuel_economy: Some(vec!["hello".to_owned(), "world".to_owned()]),
+                owners: Some(vec![OwnerInfo {
+                    id: "1".to_owned(),
+                    name: Some("Annabelle".to_owned()),
+                    website: Some("corgi.com/foo".to_owned()),
+                }]),
+                vin: Some("123123123".to_owned()),
+                stock_number: Some("123".to_owned()),
+                comments: Some("this car is awesome".to_owned()),
+                image_urls: Some(vec!["hello.com".to_owned(), "baz.com".to_owned()]),
+            };
+
+            let db = Database::open_in_memory().await.unwrap();
+            assert_eq!(db.check_attempt("kbb", "123").await.unwrap(), None);
+            assert_eq!(db.check_attempt("kbb", "321").await.unwrap(), None);
+            db.add_failed_attempt("kbb", "123").await.unwrap();
+            db.add_listing(listing.clone()).await.unwrap();
+            assert_eq!(db.check_attempt("kbb", "123").await.unwrap(), Some(false));
+            assert_eq!(db.check_attempt("kbb", "321").await.unwrap(), Some(true));
         });
     }
 }

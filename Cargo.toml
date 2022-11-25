@@ -12,4 +12,5 @@ reqwest = { version="0.11.11", default-features = false, features = ["rustls-tls
 rusqlite = { version = "0.28.0", features = ["bundled"] }
 scraper = { version="0.13.0" }
 serde_json = { version="1.0" }
+sha2 = { version="0.10.6" }
 tokio = { version = "1.20.1", features=["full"] }
