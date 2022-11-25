@@ -113,7 +113,7 @@ impl Database {
             if let Some(owners) = &listing.owners {
                 for (i, owner) in owners.iter().enumerate() {
                     tx.execute(
-                        "INSERT INTO owners (listing_id, owner_index, website_id, name, website) VALUES (?1, ?2, ?3, ?4)",
+                        "INSERT INTO owners (listing_id, owner_index, website_id, name, website) VALUES (?1, ?2, ?3, ?4, ?5)",
                         rusqlite::params![&last_id, &i, &owner.id, &owner.name, &owner.website],
                     )?;
                 }
@@ -153,7 +153,7 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
     )?;
     conn.execute(
         "CREATE TABLE if not exists listings (
-            id             INT PRIMARY KEY,
+            id             INTEGER PRIMARY KEY,
             website        TEXT not null,
             website_id     TEXT not null,
             title          TEXT,
@@ -177,9 +177,9 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
     )?;
     conn.execute(
         "CREATE TABLE if not exists owners (
-            id             INT PRIMARY KEY,
+            id             INTEGER PRIMARY KEY,
             listing_id     INT not null,
-            owner_index    INT not null
+            owner_index    INT not null,
             website_id     TEXT,
             name           TEXT,
             website        TEXT
@@ -188,7 +188,7 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
     )?;
     conn.execute(
         "CREATE TABLE if not exists images (
-            id             INT PRIMARY KEY,
+            id             INTEGER PRIMARY KEY,
             listing_id     INT not null,
             image_index    INT not null,
             url            TEXT not null,
