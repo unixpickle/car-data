@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use sha2::Digest;
 use tokio::task::spawn_blocking;
 
-use crate::types::Listing;
+use crate::types::{Listing, OwnerInfo};
 
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
@@ -201,6 +201,76 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
 
 fn maybe_list_entry<T>(x: &Option<Vec<T>>, i: usize) -> Option<&T> {
     x.as_ref().and_then(|v| v.get(i))
+}
+
+fn maybe_build_list(x: Option<String>, y: Option<String>) -> Option<Vec<String>> {
+    if let Some(x) = x {
+        let mut res = vec![x];
+        if let Some(y) = y {
+            res.push(y);
+        }
+        Some(res)
+    } else {
+        None
+    }
+}
+
+fn retrieve_listing(conn: &mut Connection, id: i64) -> rusqlite::Result<Option<Listing>> {
+    let tx = conn.transaction()?;
+    let row = tx.query_row_and_then(
+        "SELECT website, website_id, title, price, make, model, year, odometer, engine, exterior_color, interior_color, drive_type, fuel_type, fuel_economy_0, fuel_economy_1, vin, stock_number, comments FROM listings WHERE id=?1",
+        (id,),
+        |row| -> rusqlite::Result<Listing> {
+            Ok(Listing{
+                website: row.get(0)?,
+                website_id: row.get(1)?,
+                title: row.get(2)?,
+                price: row.get(3)?,
+                make: row.get(4)?,
+                model: row.get(5)?,
+                year: row.get(6)?,
+                odometer: row.get(7)?,
+                engine_description: row.get(8)?,
+                exterior_color: row.get(9)?,
+                interior_color: row.get(10)?,
+                drive_type: row.get(11)?,
+                fuel_type: row.get(12)?,
+                fuel_economy: maybe_build_list(row.get(13)?, row.get(14)?),
+                owners: None,
+                vin: row.get(15)?,
+                stock_number: row.get(16)?,
+                comments: row.get(17)?,
+                image_urls: None,
+            })
+        },
+    );
+    match row {
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+        Ok(mut x) => {
+            let mut images = Vec::new();
+            for row in tx
+                .prepare("SELECT url FROM images WHERE listing_id=?1 ORDER BY image_index")?
+                .query_map((&id,), |x| Ok(x.get::<_, String>(0)?))?
+            {
+                images.push(row?);
+            }
+            if images.len() > 0 {
+                x.image_urls = Some(images);
+            }
+            let mut owners = Vec::new();
+            for row in tx
+                .prepare("SELECT website_id, name, website FROM owners WHERE listing_id=?1 ORDER BY owner_index")?
+                .query_map((&id,), |x| Ok(OwnerInfo{id: x.get(0)?, name: x.get(1)?, website: x.get(2)?}))?
+            {
+                owners.push(row?);
+            }
+            if owners.len() > 0 {
+                x.owners = Some(owners);
+            }
+            Ok(Some(x))
+        }
+    }
 }
 
 #[cfg(test)]
