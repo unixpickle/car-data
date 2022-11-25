@@ -123,6 +123,11 @@ impl Database {
         }).await
     }
 
+    pub async fn listing_for_id(&self, id: i64) -> anyhow::Result<Option<Listing>> {
+        self.with_conn(move |conn| Ok(retrieve_listing(conn, id)?))
+            .await
+    }
+
     async fn with_conn<
         T: 'static + Send,
         F: 'static + Send + FnOnce(&mut Connection) -> anyhow::Result<T>,
@@ -332,9 +337,11 @@ mod tests {
             assert_eq!(db.check_attempt("kbb", "123").await.unwrap(), None);
             assert_eq!(db.check_attempt("kbb", "321").await.unwrap(), None);
             db.add_failed_attempt("kbb", "123").await.unwrap();
-            db.add_listing(listing.clone()).await.unwrap();
+            let listing_id = db.add_listing(listing.clone()).await.unwrap().unwrap();
             assert_eq!(db.check_attempt("kbb", "123").await.unwrap(), Some(false));
             assert_eq!(db.check_attempt("kbb", "321").await.unwrap(), Some(true));
+            assert_eq!(db.listing_for_id(listing_id + 1).await.unwrap(), None);
+            assert_eq!(db.listing_for_id(listing_id).await.unwrap(), Some(listing));
         });
     }
 }
