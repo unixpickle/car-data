@@ -72,11 +72,11 @@ impl Database {
         .await
     }
 
-    pub async fn add_listing(&self, listing: Listing) -> anyhow::Result<bool> {
+    pub async fn add_listing(&self, listing: Listing) -> anyhow::Result<Option<i64>> {
         self.with_conn(move |conn| {
             let tx = conn.transaction()?;
             if tx.execute("INSERT OR IGNORE INTO attempt_ids (website, website_id, success) VALUES (?1, ?2, 1)", (&listing.website, &listing.website_id))? != 1 {
-                return Ok(false);
+                return Ok(None);
             }
             tx.execute(
                 "INSERT INTO listings (website, website_id, title, price, make, model, year, odometer, engine, exterior_color, interior_color, drive_type, fuel_type, fuel_economy_0, fuel_economy_1, vin, stock_number, comments) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
@@ -111,15 +111,15 @@ impl Database {
                 }
             }
             if let Some(owners) = &listing.owners {
-                for owner in owners {
+                for (i, owner) in owners.iter().enumerate() {
                     tx.execute(
-                        "INSERT INTO owners (listing_id, website_id, name, website) VALUES (?1, ?2, ?3, ?4)",
-                        rusqlite::params![&last_id, &owner.id, &owner.name, &owner.website],
+                        "INSERT INTO owners (listing_id, owner_index, website_id, name, website) VALUES (?1, ?2, ?3, ?4)",
+                        rusqlite::params![&last_id, &i, &owner.id, &owner.name, &owner.website],
                     )?;
                 }
             }
             tx.commit()?;
-            Ok(true)
+            Ok(Some(last_id))
         }).await
     }
 
@@ -179,6 +179,7 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
         "CREATE TABLE if not exists owners (
             id             INT PRIMARY KEY,
             listing_id     INT not null,
+            owner_index    INT not null
             website_id     TEXT,
             name           TEXT,
             website        TEXT
