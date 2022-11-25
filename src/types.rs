@@ -5,13 +5,13 @@ use std::str::FromStr;
 use rusqlite::types::{FromSql, FromSqlError, ToSqlOutput, ValueRef};
 use rusqlite::ToSql;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum PriceUnit {
     #[default]
     Cents,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Price {
     pub value: u64,
     pub unit: PriceUnit,
@@ -45,13 +45,13 @@ impl Display for Price {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum DistanceUnit {
     #[default]
     Miles,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Distance {
     pub value: u64,
     pub unit: DistanceUnit,
@@ -85,7 +85,7 @@ impl Display for Distance {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DriveType {
     TwoWheelFront,
     TwoWheelRear,
@@ -118,7 +118,7 @@ impl Display for DriveType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FuelType {
     Gasoline,
     Hybrid,
@@ -160,14 +160,14 @@ impl Display for FuelType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnerInfo {
     pub id: String,
     pub name: Option<String>,
     pub website: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Listing {
     pub website: String,
     pub website_id: String,
