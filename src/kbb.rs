@@ -1,10 +1,11 @@
 use crate::types::{Listing, OwnerInfo, Price, PriceUnit};
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, time::Duration};
 
 use crate::parse_util::{inner_text, FromJSON};
 use reqwest::{RequestBuilder, Response};
 use scraper::{Html, Selector};
 use serde_json::Value;
+use tokio::{fs::File, io::AsyncWriteExt, time::sleep};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -23,15 +24,20 @@ impl Client {
 
     pub async fn run<R: Request>(&mut self, req: R) -> anyhow::Result<R::Output> {
         let mut last_err: anyhow::Error = anyhow::Error::msg("UNREACHABLE");
-        for _ in 0..self.num_retries {
+        for i in 0..self.num_retries {
             let builder = req
                 .build_request(&self)
+                .timeout(Duration::from_secs(30))
                 .header("host", "www.kbb.com")
                 .header("user-agent", format!("cardata/{}", VERSION));
             let result = builder.send().await;
             match result {
                 Err(e) => {
                     last_err = e.into();
+                    self.client = reqwest::Client::new();
+                    if i + 1 < self.num_retries {
+                        sleep(Duration::from_secs(10)).await;
+                    }
                 }
                 Ok(resp) => {
                     let output = req.handle_response(resp).await;
