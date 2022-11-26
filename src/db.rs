@@ -11,6 +11,7 @@ use tokio::task::spawn_blocking;
 
 use crate::types::{Listing, OwnerInfo};
 
+#[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
 }
