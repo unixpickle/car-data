@@ -280,3 +280,32 @@ fn vec_into_first<T>(list: Vec<T>) -> Option<T> {
     }
     None
 }
+
+pub struct ImageDownloadRequest {
+    pub url: String,
+    pub out_path: PathBuf,
+}
+
+impl Request for ImageDownloadRequest {
+    type Output = ();
+    type Err = anyhow::Error;
+
+    fn build_request(&self, client: &Client) -> RequestBuilder {
+        client.client.get(&self.url)
+    }
+
+    fn handle_response(
+        &self,
+        mut resp: Response,
+    ) -> Pin<Box<dyn Send + Future<Output = anyhow::Result<Self::Output>>>> {
+        let out_path = self.out_path.clone();
+        Box::pin(async move {
+            let mut out_file = File::create(&out_path).await?;
+            while let Some(chunk) = resp.chunk().await? {
+                out_file.write_all(&chunk).await?;
+            }
+            out_file.flush().await?;
+            Ok(())
+        })
+    }
+}
