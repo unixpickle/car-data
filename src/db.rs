@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::{
     mem::take,
     path::Path,
@@ -136,14 +137,25 @@ impl Database {
         f: F,
     ) -> anyhow::Result<T> {
         let conn = self.conn.clone();
-        spawn_blocking(move || f(&mut conn.lock().unwrap())).await?
+        spawn_blocking(move || f(&mut conn.unwrap().lock().unwrap())).await?
+    }
+}
+
+impl Drop for Database {
+    fn drop(&mut self) {
+        let conn = take(&mut self.conn);
+        spawn_blocking(move || drop(conn));
     }
 }
 
 pub fn hash_image_url(url: &str) -> String {
     let mut hasher = sha2::Sha256::new();
     hasher.update(url);
-    format!("{:x?}", hasher.finalize())
+    let mut res = String::with_capacity(64);
+    for ch in hasher.finalize() {
+        write!(&mut res, "{:02x}", ch).unwrap();
+    }
+    res
 }
 
 fn create_tables(conn: &Connection) -> anyhow::Result<()> {
