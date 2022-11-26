@@ -65,7 +65,7 @@ pub trait Request {
     fn handle_response(
         &self,
         resp: Response,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, Self::Err>>>>;
+    ) -> Pin<Box<dyn Send + Future<Output = Result<Self::Output, Self::Err>>>>;
 }
 
 // A request for fetching information about an individual car listing.
@@ -85,7 +85,7 @@ impl Request for ListingRequest {
     fn handle_response(
         &self,
         resp: Response,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Self::Output>>>> {
+    ) -> Pin<Box<dyn Send + Future<Output = anyhow::Result<Self::Output>>>> {
         let id = self.0.clone();
         Box::pin(async {
             let text = resp.text().await?;
