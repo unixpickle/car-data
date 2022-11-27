@@ -96,7 +96,30 @@ async fn download_listing_images(
     image_path: &str,
     listing: &Listing,
 ) -> anyhow::Result<()> {
-    //TODO
+    if let Some(urls) = &listing.image_urls {
+        for url in urls {
+            let image_hash = hash_image_url(&url);
+            let out_path: PathBuf = [image_path, &image_hash].iter().collect();
+            if tokio::fs::metadata(&out_path).await.is_ok() {
+                // Skip for already-downloaded image URL
+                continue;
+            }
+            // Download+rename to atomically write the file.
+            let tmp_out_path: PathBuf = [
+                image_path,
+                &format!("{}.{}", image_hash, listing.website_id),
+            ]
+            .iter()
+            .collect();
+            client
+                .run(ImageDownloadRequest {
+                    url: url.clone(),
+                    out_path: tmp_out_path.clone(),
+                })
+                .await?;
+            tokio::fs::rename(tmp_out_path, out_path).await?
+        }
+    }
     Ok(())
 }
 
