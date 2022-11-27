@@ -13,7 +13,7 @@ use crate::types::{Listing, OwnerInfo};
 
 #[derive(Clone)]
 pub struct Database {
-    conn: Arc<Mutex<Connection>>,
+    conn: Option<Arc<Mutex<Connection>>>,
 }
 
 impl Database {
@@ -23,7 +23,7 @@ impl Database {
             let conn = Connection::open(path)?;
             create_tables(&conn)?;
             Ok(Database {
-                conn: Arc::new(Mutex::new(conn)),
+                conn: Some(Arc::new(Mutex::new(conn))),
             })
         })
         .await?
@@ -34,7 +34,7 @@ impl Database {
             let conn = Connection::open_in_memory()?;
             create_tables(&conn)?;
             Ok(Database {
-                conn: Arc::new(Mutex::new(conn)),
+                conn: Some(Arc::new(Mutex::new(conn))),
             })
         })
         .await?
