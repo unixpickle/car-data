@@ -130,6 +130,18 @@ impl Database {
             .await
     }
 
+    pub async fn counts(&self) -> anyhow::Result<(i64, i64)> {
+        self.with_conn(move |conn| {
+            let tx = conn.transaction()?;
+            let listing_count: i64 =
+                tx.query_row("SELECT COUNT(*) FROM listings", (), |row| row.get(0))?;
+            let attempt_count: i64 =
+                tx.query_row("SELECT COUNT(*) FROM attempt_ids", (), |row| row.get(0))?;
+            Ok((listing_count, attempt_count))
+        })
+        .await
+    }
+
     async fn with_conn<
         T: 'static + Send,
         F: 'static + Send + FnOnce(&mut Connection) -> anyhow::Result<T>,
