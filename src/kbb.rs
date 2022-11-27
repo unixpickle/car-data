@@ -7,8 +7,6 @@ use scraper::{Html, Selector};
 use serde_json::Value;
 use tokio::{fs::File, io::AsyncWriteExt, time::sleep};
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-
 pub struct Client {
     client: reqwest::Client,
     num_retries: i32,
@@ -29,7 +27,7 @@ impl Client {
                 .build_request(&self)
                 .timeout(Duration::from_secs(30))
                 .header("host", "www.kbb.com")
-                .header("user-agent", format!("cardata/{}", VERSION));
+                .header("user-agent", format!("curl/1"));
             let result = builder.send().await;
             match result {
                 Err(e) => {
