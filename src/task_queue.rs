@@ -32,12 +32,9 @@ impl<T: Send, I: IntoIterator<Item = T>> From<I> for TaskQueue<T> {
 }
 
 impl<T: Send> TaskQueue<T> {
-    pub async fn pop(&self) -> Option<T> {
-        self.queue.lock().await.pop()
-    }
-
-    pub async fn len(&self) -> usize {
-        self.queue.lock().await.len()
+    pub async fn pop(&self) -> Option<(T, usize)> {
+        let mut locked = self.queue.lock().await;
+        locked.pop().map(|x| (x, locked.len()))
     }
 
     pub fn orig_len(&self) -> usize {

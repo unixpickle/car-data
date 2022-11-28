@@ -61,7 +61,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
 async fn fetch_listings(db: Database, perm: TaskQueue<i64>, args: Args) -> anyhow::Result<()> {
     let mut client = Client::new(args.num_retries);
-    while let Some(id) = perm.pop().await {
+    while let Some((id, remaining)) = perm.pop().await {
         let id_str = format!("{}", id);
         if db.check_attempt(KBB_WEBSITE_NAME, &id_str).await?.is_some() {
             continue;
@@ -73,12 +73,11 @@ async fn fetch_listings(db: Database, perm: TaskQueue<i64>, args: Args) -> anyho
             db.add_failed_attempt(KBB_WEBSITE_NAME, &id_str).await?;
         }
 
-        let start = Instant::now();
-        let (num_listings, total_attempts) = db.counts().await?;
-        let counts_duration = start.elapsed();
-        let remaining = perm.len().await;
         let completed = perm.orig_len() - remaining;
         if completed % 100 == 0 {
+            let start = Instant::now();
+            let (num_listings, total_attempts) = db.counts().await?;
+            let counts_duration = start.elapsed();
             eprintln!(
                 "scraped={:.04}% hit_rate={:.02}% hit_total={} db_latency={:.05}",
                 100.0 * (completed as f64) / (perm.orig_len() as f64),
