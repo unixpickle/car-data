@@ -1,11 +1,9 @@
+use crate::chan_util::recv_at_least_one_blocking;
 use std::fmt::Write;
-use std::{
-    mem::take,
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::path::Path;
 
-use rusqlite::Connection;
+use async_channel::{bounded, Receiver, Sender};
+use rusqlite::{Connection, Transaction};
 use sha2::Digest;
 use tokio::task::spawn_blocking;
 
@@ -13,7 +11,14 @@ use crate::types::{Listing, OwnerInfo};
 
 #[derive(Clone)]
 pub struct Database {
-    conn: Option<Arc<Mutex<Connection>>>,
+    req_chan: Sender<
+        Box<
+            dyn Send
+                + FnOnce(
+                    anyhow::Result<&mut Transaction>,
+                ) -> Box<dyn Send + FnOnce(anyhow::Result<()>)>,
+        >,
+    >,
 }
 
 impl Database {
@@ -21,10 +26,7 @@ impl Database {
         let path = path.as_ref().to_owned();
         spawn_blocking(move || -> anyhow::Result<Database> {
             let conn = Connection::open(path)?;
-            create_tables(&conn)?;
-            Ok(Database {
-                conn: Some(Arc::new(Mutex::new(conn))),
-            })
+            Database::new_with_conn(conn)
         })
         .await?
     }
@@ -32,12 +34,16 @@ impl Database {
     pub async fn open_in_memory() -> anyhow::Result<Database> {
         spawn_blocking(move || -> anyhow::Result<Database> {
             let conn = Connection::open_in_memory()?;
-            create_tables(&conn)?;
-            Ok(Database {
-                conn: Some(Arc::new(Mutex::new(conn))),
-            })
+            Database::new_with_conn(conn)
         })
         .await?
+    }
+
+    fn new_with_conn(conn: Connection) -> anyhow::Result<Database> {
+        create_tables(&conn)?;
+        let (tx, rx) = bounded(100);
+        spawn_blocking(move || Database::transaction_worker(conn, rx));
+        Ok(Database { req_chan: tx })
     }
 
     pub async fn check_attempt(
@@ -76,7 +82,7 @@ impl Database {
 
     pub async fn add_listing(&self, listing: Listing) -> anyhow::Result<Option<i64>> {
         self.with_conn(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.savepoint()?;
             if tx.execute("INSERT OR IGNORE INTO attempt_ids (website, website_id, success) VALUES (?1, ?2, 1)", (&listing.website, &listing.website_id))? != 1 {
                 return Ok(None);
             }
@@ -126,13 +132,12 @@ impl Database {
     }
 
     pub async fn listing_for_id(&self, id: i64) -> anyhow::Result<Option<Listing>> {
-        self.with_conn(move |conn| Ok(retrieve_listing(conn, id)?))
+        self.with_conn(move |tx| Ok(retrieve_listing(tx, id)?))
             .await
     }
 
     pub async fn counts(&self) -> anyhow::Result<(i64, i64)> {
-        self.with_conn(move |conn| {
-            let tx = conn.transaction()?;
+        self.with_conn(move |tx| {
             let listing_count: i64 =
                 tx.query_row("SELECT COUNT(*) FROM listings", (), |row| row.get(0))?;
             let attempt_count: i64 =
@@ -144,20 +149,76 @@ impl Database {
 
     async fn with_conn<
         T: 'static + Send,
-        F: 'static + Send + FnOnce(&mut Connection) -> anyhow::Result<T>,
+        F: 'static + Send + FnOnce(&mut Transaction) -> anyhow::Result<T>,
     >(
         &self,
         f: F,
     ) -> anyhow::Result<T> {
-        let conn = self.conn.clone();
-        spawn_blocking(move || f(&mut conn.unwrap().lock().unwrap())).await?
+        let (res_tx, res_rx) = bounded(1);
+        let res = self
+            .req_chan
+            .send(Box::new(move |maybe_tx| match maybe_tx {
+                Ok(tx) => {
+                    let res = f(tx);
+                    Box::new(move |commit_res| {
+                        if res.is_ok() && !commit_res.is_ok() {
+                            res_tx.send_blocking(Err(commit_res.unwrap_err())).ok();
+                        } else {
+                            res_tx.send_blocking(res).ok();
+                        }
+                    })
+                }
+                Err(e) => Box::new(move |_| {
+                    res_tx.send_blocking(Err(e)).ok();
+                }),
+            }))
+            .await;
+        if res.is_err() {
+            // The true error contains the argument we tried to send,
+            // which we cannot wrap in anyhow for some reason.
+            Err(anyhow::Error::msg("connection worker has died"))
+        } else {
+            res_rx.recv().await?
+        }
     }
-}
 
-impl Drop for Database {
-    fn drop(&mut self) {
-        let conn = take(&mut self.conn);
-        spawn_blocking(move || drop(conn));
+    fn transaction_worker(
+        mut conn: Connection,
+        rx: Receiver<
+            Box<
+                dyn Send
+                    + FnOnce(
+                        anyhow::Result<&mut Transaction>,
+                    ) -> Box<dyn Send + FnOnce(anyhow::Result<()>)>,
+            >,
+        >,
+    ) {
+        while let Some(reqs) = recv_at_least_one_blocking(&rx) {
+            match conn.transaction() {
+                Ok(mut tx) => {
+                    let mut done_fns = Vec::new();
+                    for req in reqs {
+                        done_fns.push(req(Ok(&mut tx)));
+                    }
+                    if let Err(e) = tx.commit() {
+                        let msg = format!("{}", e);
+                        for done_fn in done_fns {
+                            done_fn(Err(anyhow::Error::msg(msg.clone())));
+                        }
+                    } else {
+                        for done_fn in done_fns {
+                            done_fn(Ok(()));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("{}", e);
+                    for req in reqs {
+                        req(Err(anyhow::Error::msg(msg.clone())))(Ok(()))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -226,6 +287,10 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
         )",
         (),
     )?;
+    conn.execute(
+        "CREATE INDEX if not exists imageshashindex ON images(hash)",
+        (),
+    )?;
     Ok(())
 }
 
@@ -245,8 +310,7 @@ fn maybe_build_list(x: Option<String>, y: Option<String>) -> Option<Vec<String>>
     }
 }
 
-fn retrieve_listing(conn: &mut Connection, id: i64) -> rusqlite::Result<Option<Listing>> {
-    let tx = conn.transaction()?;
+fn retrieve_listing(tx: &Transaction, id: i64) -> rusqlite::Result<Option<Listing>> {
     let row = tx.query_row_and_then(
         "SELECT website, website_id, title, price, make, model, year, odometer, engine, exterior_color, interior_color, drive_type, fuel_type, fuel_economy_0, fuel_economy_1, vin, stock_number, comments FROM listings WHERE id=?1",
         (id,),
