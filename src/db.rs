@@ -31,6 +31,7 @@ impl Database {
         .await?
     }
 
+    #[allow(dead_code)]
     pub async fn open_in_memory() -> anyhow::Result<Database> {
         spawn_blocking(move || -> anyhow::Result<Database> {
             let conn = Connection::open_in_memory()?;
@@ -131,6 +132,7 @@ impl Database {
         }).await
     }
 
+    #[allow(dead_code)]
     pub async fn listing_for_id(&self, id: i64) -> anyhow::Result<Option<Listing>> {
         self.with_conn(move |tx| Ok(retrieve_listing(tx, id)?))
             .await
