@@ -138,6 +138,25 @@ impl Database {
             .await
     }
 
+    pub async fn insert_phashes(
+        &self,
+        hash_and_phash: Vec<(String, String)>,
+    ) -> anyhow::Result<()> {
+        self.with_conn(move |conn| {
+            let tx = conn.savepoint()?;
+            for (image_hash, phash) in hash_and_phash {
+                tx.execute(
+                    "INSERT OR IGNORE INTO phashes (hash, phash, hash_count) VALUES
+                     (?1, ?2, (SELECT COUNT(*) from images WHERE hash=?1))",
+                    (&image_hash, &phash),
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn counts(&self) -> anyhow::Result<(i64, i64)> {
         self.with_conn(move |tx| {
             let listing_count: i64 =
@@ -287,6 +306,24 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
             url            TEXT not null,
             hash           CHAR(64) not null
         )",
+        (),
+    )?;
+    conn.execute(
+        "CREATE TABLE if not exists phashes (
+            id             INTEGER PRIMARY KEY,
+            hash           CHAR(64) not null,
+            hash_count     INT not null,
+            phash          CHAR(64) not null,
+            UNIQUE (hash)
+        )",
+        (),
+    )?;
+    conn.execute(
+        "CREATE INDEX if not exists phashindex ON phashes(phash)",
+        (),
+    )?;
+    conn.execute(
+        "CREATE INDEX if not exists phasheshashindex ON phashes(hash)",
         (),
     )?;
     conn.execute(
