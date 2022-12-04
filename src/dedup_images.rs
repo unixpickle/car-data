@@ -36,6 +36,50 @@ pub struct Args {
 }
 
 pub async fn main(args: Args) -> anyhow::Result<()> {
+    create_dir_all(&args.output_dir).await?;
+
+    let (path_tx, path_rx) = async_channel::bounded(args.concurrency);
+    let image_dir = args.image_dir.clone();
+    spawn(async move {
+        let mut reader = read_dir(image_dir).await.unwrap();
+        while let Some(path_info) = reader.next_entry().await.unwrap() {
+            path_tx.send(path_info.path()).await.unwrap();
+        }
+    });
+
+    let (hash_tx, hash_rx) = async_channel::bounded(100);
+    for _ in 0..args.concurrency {
+        let path_rx = path_rx.clone();
+        let hash_tx = hash_tx.clone();
+        let args = args.clone();
+        spawn_blocking(move || {
+            while let Ok(path) = path_rx.recv_blocking() {
+                match hash_and_downsample(&args, &path) {
+                    Ok(hash) => hash_tx.send_blocking((path, hash)).unwrap(),
+                    Err(e) => eprintln!("error from {:?}: {}", path, e),
+                }
+            }
+        });
+    }
+    drop(hash_tx);
+
+    let db = Database::open(&args.db_path).await?;
+    let mut num_inserted: u64 = 0;
+    while let Some(objs) = recv_at_least_one(&hash_rx).await {
+        let batch_size = objs.len();
+        db.insert_phashes(
+            objs.into_iter()
+                .map(|(path, phash)| (path_basename(&path), phash))
+                .collect(),
+        )
+        .await?;
+        for _ in 0..batch_size {
+            num_inserted += 1;
+            if num_inserted % 100 == 0 {
+                println!("inserted {} hashes", num_inserted);
+            }
+        }
+    }
     Ok(())
 }
 
