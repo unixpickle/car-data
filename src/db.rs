@@ -5,7 +5,7 @@ use std::path::Path;
 use async_channel::{bounded, Receiver, Sender};
 use rusqlite::{Connection, Transaction};
 use sha2::Digest;
-use tokio::task::spawn_blocking;
+use tokio::{spawn, task::spawn_blocking};
 
 use crate::types::{Listing, OwnerInfo};
 
@@ -168,6 +168,48 @@ impl Database {
         .await
     }
 
+    pub fn unique_phashes(&self) -> Receiver<anyhow::Result<(String, Listing)>> {
+        let (tx, rx) = bounded(100);
+        let db_clone = self.clone();
+        spawn(async move {
+            let tx_clone = tx.clone();
+            let res = db_clone
+                .with_conn(move |conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT
+                            phashes.phash,
+                            images.listing_id
+                        FROM phashes
+                        LEFT JOIN images ON images.hash = phashes.hash
+                        RIGHT JOIN listings ON listings.id == images.listing_id
+                        WHERE (SELECT SUM(hash_count) FROM phashes phashes2 WHERE phashes2.phash = phashes.phash) == 1",
+                    )?;
+                    let results = stmt.query_map((), |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                    })?;
+                    for row in results {
+                        let (phash, listing_id) = row?;
+                        if let Some(listing) = retrieve_listing(conn, listing_id)? {
+                            if tx.send_blocking(Ok((phash, listing))).is_err() {
+                                return Ok(());
+                            }
+                        } else {
+                            return Err(anyhow::Error::msg(format!(
+                                "no listing found for ID {}",
+                                listing_id
+                            )));
+                        }
+                    }
+                    Ok(())
+                })
+                .await;
+            if let Err(e) = res {
+                tx_clone.send(Err(e)).await.ok();
+            }
+        });
+        rx
+    }
+
     async fn with_conn<
         T: 'static + Send,
         F: 'static + Send + FnOnce(&mut Transaction) -> anyhow::Result<T>,
@@ -328,6 +370,14 @@ fn create_tables(conn: &Connection) -> anyhow::Result<()> {
     )?;
     conn.execute(
         "CREATE INDEX if not exists imageshashindex ON images(hash)",
+        (),
+    )?;
+    conn.execute(
+        "CREATE INDEX if not exists owners_listingid ON owners(listing_id)",
+        (),
+    )?;
+    conn.execute(
+        "CREATE INDEX if not exists images_listingid ON images(listing_id)",
         (),
     )?;
     Ok(())
