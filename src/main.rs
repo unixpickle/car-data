@@ -5,6 +5,7 @@ use clap::Parser;
 mod chan_util;
 mod db;
 mod dedup_images;
+mod export_data;
 mod kbb;
 mod parse_util;
 mod scrape_kbb;
@@ -22,6 +23,10 @@ enum Args {
         #[clap(flatten)]
         args: dedup_images::Args,
     },
+    ExportData {
+        #[clap(flatten)]
+        args: export_data::Args,
+    },
 }
 
 #[tokio::main]
@@ -30,6 +35,7 @@ async fn main() -> ExitCode {
     if let Err(e) = match args {
         Args::ScrapeKbb { args } => scrape_kbb::main(args).await,
         Args::DedupImages { args } => dedup_images::main(args).await,
+        Args::ExportData { args } => export_data::main(args).await,
     } {
         eprintln!("{}", e);
         ExitCode::FAILURE
