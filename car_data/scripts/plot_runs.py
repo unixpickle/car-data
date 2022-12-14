@@ -13,6 +13,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ema_rate", type=float, default=0.99)
     parser.add_argument("--max_step", type=int, default=None)
+    parser.add_argument("--key", type=str, default="loss")
     parser.add_argument("--output_path", type=str, default="plot.png")
     parser.add_argument("names_and_paths", nargs="+", type=str)
     args = parser.parse_args()
@@ -21,7 +22,7 @@ def main():
     for name, path in zip(args.names_and_paths[::2], args.names_and_paths[1::2]):
         lines = read_log_lines(path, args.max_step)
         steps = np.array([x["step"] for x in lines])
-        losses = np.array([x["loss"] for x in lines])
+        losses = np.array([x[args.key] for x in lines])
         plt.plot(
             steps,
             smooth(losses, args.ema_rate),
@@ -29,7 +30,7 @@ def main():
         )
     plt.legend()
     plt.xlabel("step")
-    plt.ylabel("loss")
+    plt.ylabel(args.key)
     plt.savefig(args.output_path)
 
 
