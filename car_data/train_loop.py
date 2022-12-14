@@ -60,7 +60,7 @@ class TrainLoop:
             last_seen_phash=self.dataset_state["test"],
         )
 
-        self.opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        self.opt = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         self.opt_state_path = os.path.join(save_dir, "opt.pt")
         if os.path.exists(self.opt_state_path):
             print("loading optimizer:", self.opt_state_path)
