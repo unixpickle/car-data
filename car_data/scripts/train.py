@@ -5,12 +5,13 @@ Entrypoint for training. Pass hyperparameters and dataset as flags.
 import argparse
 
 import torch
-from car_data.model import CLIPModel
+from car_data.model import create_model
 from car_data.train_loop import TrainLoop
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, default="clip")
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -24,7 +25,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("creating model...")
-    model = CLIPModel(device)
+    model = create_model(args.model_name, device)
 
     print("creating trainer...")
     trainer = TrainLoop(

@@ -7,6 +7,13 @@ import torch.nn as nn
 from .losses import NUM_PRICE_BINS
 
 
+def create_model(name: str, device: torch.device, download_root: Optional[str] = None):
+    if name == "clip":
+        return CLIPModel(device, download_root=download_root)
+    else:
+        raise ValueError(f"unknown model name: {name}")
+
+
 class CLIPModel(nn.Module):
     def __init__(self, device: torch.device, download_root: Optional[str] = None):
         super().__init__()
