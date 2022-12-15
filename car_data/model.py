@@ -10,6 +10,8 @@ from .losses import NUM_PRICE_BINS
 def create_model(name: str, device: torch.device, download_root: Optional[str] = None):
     if name == "clip":
         return CLIPModel(device, download_root=download_root)
+    elif name == "mobilenetv2":
+        return MobileNetV2Model(device, download_root=download_root)
     else:
         raise ValueError(f"unknown model name: {name}")
 
@@ -27,3 +29,21 @@ class CLIPModel(nn.Module):
         return dict(
             price_bin=self.price_layer(feats),
         )
+
+
+class MobileNetV2Model(nn.Module):
+    def __init__(self, device: torch.device, download_root: Optional[str] = None):
+        super().__init__()
+        if download_root is not None:
+            backup_dir = torch.hub.get_dir()
+            torch.hub.set_dir(download_root)
+        self.model = torch.hub.load(
+            "pytorch/vision:v0.10.0", "mobilenet_v2", pretrained=True
+        ).to(device)
+        if download_root is not None:
+            torch.hub.set_dir(backup_dir)
+        self.model.classifier[1] = nn.Linear(1280, NUM_PRICE_BINS, device=device)
+
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        logits = self.model(x)
+        return dict(price_bin=logits)
