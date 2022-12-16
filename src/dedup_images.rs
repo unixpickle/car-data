@@ -36,7 +36,17 @@ pub struct Args {
 }
 
 pub async fn main(args: Args) -> anyhow::Result<()> {
-    create_dir_all(&args.output_dir).await?;
+    println!("creating output directories...");
+
+    let chars = "0123456789abcdef";
+    for x in chars.chars() {
+        for y in chars.chars() {
+            let full_path: PathBuf = [&args.output_dir, &format!("{}{}", x, y)].iter().collect();
+            create_dir_all(full_path).await?;
+        }
+    }
+
+    println!("running dedup...");
 
     let (path_tx, path_rx) = async_channel::bounded(args.concurrency);
     let image_dir = args.image_dir.clone();
@@ -99,10 +109,14 @@ fn hash_and_downsample(args: &Args, path: &Path) -> anyhow::Result<String> {
             FilterType::Lanczos3,
         );
     }
-    let out_path: PathBuf = [&args.output_dir, &hash].iter().collect();
-    let tmp_out_path: PathBuf = [&args.output_dir, &format!("tmp_{}", path_basename(path))]
-        .iter()
-        .collect();
+    let out_path: PathBuf = [&args.output_dir, &hash[0..2], &hash].iter().collect();
+    let tmp_out_path: PathBuf = [
+        &args.output_dir,
+        &hash[0..2],
+        &format!("tmp_{}", path_basename(path)),
+    ]
+    .iter()
+    .collect();
     img.save_with_format(&tmp_out_path, ImageFormat::Jpeg)?;
     rename(tmp_out_path, out_path)?;
     Ok(hash)

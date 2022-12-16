@@ -91,7 +91,8 @@ class CarImageDataset(Dataset):
         return len(self.phashes)
 
     def __getitem__(self, idx: int) -> CarImage:
-        img_path = os.path.join(self.image_dir, self.phashes[idx])
+        phash = self.phashes[idx]
+        img_path = os.path.join(self.image_dir, phash[:2], phash)
         try:
             img = Image.open(img_path).convert("RGB")
         except:
