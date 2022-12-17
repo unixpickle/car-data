@@ -1,14 +1,16 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{
     db::{hash_image_url, Database},
+    image_util::downsample_image,
     kbb::{Client, ImageDownloadRequest, ListingRequest},
     task_queue::TaskQueue,
     types::Listing,
 };
 use clap::Parser;
+use image::ImageFormat;
 use rand::seq::SliceRandom;
-use tokio::{fs::create_dir_all, spawn, sync::mpsc::channel, time::Instant};
+use tokio::{fs::create_dir_all, spawn, sync::mpsc::channel, task::spawn_blocking, time::Instant};
 
 const KBB_WEBSITE_NAME: &str = "kbb.com";
 
@@ -25,6 +27,9 @@ pub struct Args {
 
     #[clap(short, long, value_parser, default_value_t = 8)]
     concurrency: usize,
+
+    #[clap(short, long, value_parser, default_value_t = 256)]
+    resize_images: u32,
 
     #[clap(value_parser)]
     db_path: String,
@@ -67,7 +72,8 @@ async fn fetch_listings(db: Database, perm: TaskQueue<i64>, args: Args) -> anyho
             continue;
         }
         if let Some(listing) = client.run(ListingRequest(id_str.clone())).await? {
-            download_listing_images(&mut client, &args.image_dir, &listing).await?;
+            download_listing_images(&mut client, &args.image_dir, args.resize_images, &listing)
+                .await?;
             db.add_listing(listing).await?;
         } else {
             db.add_failed_attempt(KBB_WEBSITE_NAME, &id_str).await?;
@@ -119,9 +125,34 @@ async fn download_listing_images(
                     out_path: tmp_out_path.clone(),
                 })
                 .await?;
-            tokio::fs::rename(tmp_out_path, out_path).await?
+            if resize_images != 0 {
+                spawn_blocking(move || resize_or_rename(resize_images, tmp_out_path, out_path))
+                    .await??;
+            } else {
+                tokio::fs::rename(tmp_out_path, out_path).await?;
+            }
         }
     }
+    Ok(())
+}
+
+fn resize_or_rename<T: AsRef<Path>>(size: u32, src: T, dst: T) -> anyhow::Result<()> {
+    if attempt_resize(size, &src, &dst).is_err() {
+        std::fs::rename(src, dst)?;
+    }
+    Ok(())
+}
+
+fn attempt_resize<T: AsRef<Path>>(size: u32, src: T, dst: T) -> anyhow::Result<()> {
+    let img = downsample_image(
+        size,
+        image::io::Reader::open(&src)?
+            .with_guessed_format()?
+            .decode()?,
+    );
+    let tmp_tmp_path = format!("{}_writing", src.as_ref().to_string_lossy());
+    img.save_with_format(&tmp_tmp_path, ImageFormat::Jpeg)?;
+    std::fs::rename(tmp_tmp_path, dst)?;
     Ok(())
 }
 
