@@ -6,6 +6,7 @@ mod chan_util;
 mod db;
 mod dedup_images;
 mod export_data;
+mod image_util;
 mod kbb;
 mod parse_util;
 mod scrape_kbb;
