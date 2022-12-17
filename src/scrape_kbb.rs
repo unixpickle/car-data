@@ -42,8 +42,11 @@ pub struct Args {
 pub async fn main(args: Args) -> anyhow::Result<()> {
     create_hash_prefixes(&args.image_dir).await?;
 
+    println!("connecting database...");
     let db = Database::open(&args.db_path).await?;
+    println!("creating permutation...");
     let perm = generate_permutation(args.min_id, args.max_id);
+    println!("scraping...");
 
     let (tx, mut rx) = channel(args.concurrency);
     for _ in 0..args.concurrency {
