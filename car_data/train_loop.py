@@ -141,6 +141,27 @@ class TrainLoop:
         _rename_from_tmp(self.dataset_state_path)
 
 
+class LossAverage:
+    def __init__(self):
+        self.results = defaultdict(lambda: 0.0)
+        self.counts = defaultdict(lambda: 0)
+
+    def add(self, losses: Dict[str, torch.Tensor], count: int):
+        for k, v in losses.items():
+            self.results[k] += v.item() * count
+            self.counts[k] += count
+
+    def average(self) -> Dict[str, float]:
+        return {k: v / self.counts[k] for k, v in self.results.items()}
+
+    def format(self, step: int) -> str:
+        key_strs = [f"step={step}"]
+        avg = self.average()
+        for k in sorted(avg.keys()):
+            key_strs.append(f"{k}={avg[k]:.04}")
+        return " ".join(key_strs)
+
+
 def _tmp_path(orig_path: str) -> str:
     return orig_path + ".tmp"
 
