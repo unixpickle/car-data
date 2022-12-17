@@ -38,28 +38,16 @@ pub struct Args {
 }
 
 pub async fn main(args: Args) -> anyhow::Result<()> {
-    println!("creating output directories...");
-
-    let chars = "0123456789abcdef";
-    for x in chars.chars() {
-        for y in chars.chars() {
-            let full_path: PathBuf = [&args.output_dir, &format!("{}{}", x, y)].iter().collect();
-            create_dir_all(full_path).await?;
-        }
-    }
-
-    println!("running dedup...");
+    create_hash_prefixes(&args.output_dir).await?;
 
     let (path_tx, path_rx) = async_channel::bounded(args.concurrency);
     let image_dir = args.image_dir.clone();
     spawn(async move {
-        for x in chars.chars() {
-            for y in chars.chars() {
-                let sub_dir: PathBuf = [&image_dir, &format!("{}{}", x, y)].iter().collect();
-                let mut reader = read_dir(sub_dir).await.unwrap();
-                while let Some(path_info) = reader.next_entry().await.unwrap() {
-                    path_tx.send(path_info.path()).await.unwrap();
-                }
+        for prefix in hash_prefixes() {
+            let sub_dir: PathBuf = [&image_dir, &prefix].iter().collect();
+            let mut reader = read_dir(sub_dir).await.unwrap();
+            while let Some(path_info) = reader.next_entry().await.unwrap() {
+                path_tx.send(path_info.path()).await.unwrap();
             }
         }
     });
@@ -96,6 +84,22 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 println!("inserted {} hashes", num_inserted);
             }
         }
+    }
+    Ok(())
+}
+
+pub fn hash_prefixes() -> Vec<String> {
+    let chars = "0123456789abcdef";
+    chars
+        .chars()
+        .flat_map(|x| chars.chars().map(move |y| format!("{}{}", x, y)))
+        .collect()
+}
+
+pub async fn create_hash_prefixes<P: AsRef<Path>>(p: P) -> anyhow::Result<()> {
+    for prefix in hash_prefixes() {
+        let full_path: PathBuf = [p.as_ref(), &Path::new(&prefix)].iter().collect();
+        create_dir_all(full_path).await?;
     }
     Ok(())
 }

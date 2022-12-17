@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     db::{hash_image_url, Database},
+    dedup_images::create_hash_prefixes,
     image_util::downsample_image,
     kbb::{Client, ImageDownloadRequest, ListingRequest},
     task_queue::TaskQueue,
@@ -10,7 +11,7 @@ use crate::{
 use clap::Parser;
 use image::ImageFormat;
 use rand::seq::SliceRandom;
-use tokio::{fs::create_dir_all, spawn, sync::mpsc::channel, task::spawn_blocking, time::Instant};
+use tokio::{spawn, sync::mpsc::channel, task::spawn_blocking, time::Instant};
 
 const KBB_WEBSITE_NAME: &str = "kbb.com";
 
@@ -39,7 +40,8 @@ pub struct Args {
 }
 
 pub async fn main(args: Args) -> anyhow::Result<()> {
-    create_dir_all(&args.image_dir).await?;
+    create_hash_prefixes(&args.image_dir).await?;
+
     let db = Database::open(&args.db_path).await?;
     let perm = generate_permutation(args.min_id, args.max_id);
 
