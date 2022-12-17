@@ -93,12 +93,15 @@ async fn fetch_listings(db: Database, perm: TaskQueue<i64>, args: Args) -> anyho
 async fn download_listing_images(
     client: &mut Client,
     image_path: &str,
+    resize_images: u32,
     listing: &Listing,
 ) -> anyhow::Result<()> {
     if let Some(urls) = &listing.image_urls {
         for url in urls {
             let image_hash = hash_image_url(&url);
-            let out_path: PathBuf = [image_path, &image_hash].iter().collect();
+            let out_path: PathBuf = [image_path, &image_hash[0..2], &image_hash]
+                .iter()
+                .collect();
             if tokio::fs::metadata(&out_path).await.is_ok() {
                 // Skip for already-downloaded image URL
                 continue;
