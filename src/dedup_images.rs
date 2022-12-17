@@ -51,9 +51,14 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let (path_tx, path_rx) = async_channel::bounded(args.concurrency);
     let image_dir = args.image_dir.clone();
     spawn(async move {
-        let mut reader = read_dir(image_dir).await.unwrap();
-        while let Some(path_info) = reader.next_entry().await.unwrap() {
-            path_tx.send(path_info.path()).await.unwrap();
+        for x in chars.chars() {
+            for y in chars.chars() {
+                let sub_dir: PathBuf = [&image_dir, &format!("{}{}", x, y)].iter().collect();
+                let mut reader = read_dir(sub_dir).await.unwrap();
+                while let Some(path_info) = reader.next_entry().await.unwrap() {
+                    path_tx.send(path_info.path()).await.unwrap();
+                }
+            }
         }
     });
 
