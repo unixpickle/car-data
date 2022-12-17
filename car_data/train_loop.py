@@ -1,6 +1,7 @@
 import json
 import os
-from typing import Any, Callable, Dict, List
+from collections import defaultdict
+from typing import Any, Callable, Dict, Iterator, List
 
 import torch
 import torch.nn as nn
@@ -18,6 +19,7 @@ class TrainLoop:
         image_dir: str,
         save_dir: str,
         batch_size: int,
+        microbatch: int,
         eval_interval: int,
         save_interval: int,
         lr: float,
@@ -30,6 +32,7 @@ class TrainLoop:
         self.image_dir = image_dir
         self.save_dir = save_dir
         self.batch_size = batch_size
+        self.microbatch = microbatch
         self.eval_interval = eval_interval
         self.save_interval = save_interval
         self.model = model
@@ -85,34 +88,45 @@ class TrainLoop:
                 self.step = json.load(f)
 
     def run_step(self):
+        results = LossAverage()
+
         if self.step % self.eval_interval == 0:
             with torch.no_grad():
                 batch = next(self.test_dataset)
+                for microbatch in self._microbatches(batch):
+                    results.add(
+                        {
+                            f"eval_{k}": v
+                            for k, v in self._compute_losses(microbatch).items()
+                        },
+                        len(microbatch),
+                    )
                 self.dataset_state["test"] = batch[-1].phash
-                eval_losses = {
-                    f"eval_{k}": v for k, v in self._compute_losses(batch).items()
-                }
-        else:
-            eval_losses = {}
 
         batch = next(self.train_dataset)
-        losses = self._compute_losses(batch)
         self.opt.zero_grad()
-        losses["loss"].backward()
+        for microbatch in self._microbatches(batch):
+            losses = self._compute_losses(microbatch)
+            batch_frac = len(microbatch) / len(batch)
+            (batch_frac * losses["loss"]).backward()
+            results.add(losses, len(microbatch))
         self.opt.step()
         self.dataset_state["train"] = batch[-1].phash
 
-        losses.update(eval_losses)
-        key_strs = [f"step={self.step}"]
-        for k in sorted(losses.keys()):
-            key_strs.append(f"{k}={losses[k].item():.04}")
-        print(" ".join(key_strs))
+        print(results.format(self.step))
 
         self.step += 1
 
         if not self.step % self.save_interval:
             print(f"saving at step {self.step}...")
             self.save()
+
+    def _microbatches(self, batch: List[CarImage]) -> Iterator[List[CarImage]]:
+        if not self.microbatch:
+            yield batch
+        else:
+            for i in range(0, len(batch), self.microbatch):
+                yield batch[i : i + self.microbatch]
 
     def _compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
         images = torch.stack([x.image for x in batch], dim=0).to(self.device)

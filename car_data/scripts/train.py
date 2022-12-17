@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--microbatch", type=int, default=0)
     parser.add_argument("--eval_interval", type=int, default=5)
     parser.add_argument("--save_interval", type=int, default=1000)
     parser.add_argument("--index_path", type=str, required=True)
@@ -33,6 +34,7 @@ def main():
         image_dir=args.image_dir,
         save_dir=args.save_dir,
         batch_size=args.batch_size,
+        microbatch=args.microbatch,
         eval_interval=args.eval_interval,
         save_interval=args.save_interval,
         lr=args.lr,
