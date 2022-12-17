@@ -19,7 +19,7 @@ pub struct Args {
     #[clap(long, value_parser, default_value_t = 660000000)]
     min_id: i64,
 
-    #[clap(long, value_parser, default_value_t = 664000000)]
+    #[clap(long, value_parser, default_value_t = 668000000)]
     max_id: i64,
 
     #[clap(short, long, value_parser, default_value_t = 15)]
