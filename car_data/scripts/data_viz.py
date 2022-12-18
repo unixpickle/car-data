@@ -34,7 +34,7 @@ def main():
             .cpu()
             .numpy()
         )
-        Image.fromarray(img).save(os.path.join(args.output_dir, f"{i}.png"))
+        Image.fromarray(img).save(os.path.join(args.output_dir, f"{i}_{obj.price}.png"))
 
 
 if __name__ == "__main__":
