@@ -1,5 +1,6 @@
 import json
 import os
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any, Callable, Dict, Iterator, List
 
@@ -12,9 +13,10 @@ from .dataset import CarImage, looping_loader
 from .losses import bin_price
 
 
-class TrainLoop:
+class TrainLoopBase(ABC):
     def __init__(
         self,
+        *,
         index_path: str,
         image_dir: str,
         save_dir: str,
@@ -97,7 +99,7 @@ class TrainLoop:
                     results.add(
                         {
                             f"eval_{k}": v
-                            for k, v in self._compute_losses(microbatch).items()
+                            for k, v in self.compute_losses(microbatch).items()
                         },
                         len(microbatch),
                     )
@@ -106,7 +108,7 @@ class TrainLoop:
         batch = next(self.train_dataset)
         self.opt.zero_grad()
         for microbatch in self._microbatches(batch):
-            losses = self._compute_losses(microbatch)
+            losses = self.compute_losses(microbatch)
             batch_frac = len(microbatch) / len(batch)
             (batch_frac * losses["loss"]).backward()
             results.add(losses, len(microbatch))
@@ -128,7 +130,27 @@ class TrainLoop:
             for i in range(0, len(batch), self.microbatch):
                 yield batch[i : i + self.microbatch]
 
-    def _compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
+    @abstractmethod
+    def compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
+        """
+        Compute a dict of loss scalars for the batch of images.
+        """
+
+    def save(self):
+        torch.save(self.model.state_dict(), _tmp_path(self.model_state_path))
+        torch.save(self.opt.state_dict(), _tmp_path(self.opt_state_path))
+        with open(_tmp_path(self.step_state_path), "w") as f:
+            json.dump(self.step, f)
+        with open(_tmp_path(self.dataset_state_path), "w") as f:
+            json.dump(self.dataset_state, f)
+        _rename_from_tmp(self.model_state_path)
+        _rename_from_tmp(self.opt_state_path)
+        _rename_from_tmp(self.step_state_path)
+        _rename_from_tmp(self.dataset_state_path)
+
+
+class TrainLoop(TrainLoopBase):
+    def compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
         images = torch.stack([x.image for x in batch], dim=0).to(self.device)
         price_targets = torch.tensor(
             [bin_price(x.price) for x in batch], device=self.device
@@ -142,17 +164,27 @@ class TrainLoop:
             loss=price_ce,
         )
 
-    def save(self):
-        torch.save(self.model.state_dict(), _tmp_path(self.model_state_path))
-        torch.save(self.opt.state_dict(), _tmp_path(self.opt_state_path))
-        with open(_tmp_path(self.step_state_path), "w") as f:
-            json.dump(self.step, f)
-        with open(_tmp_path(self.dataset_state_path), "w") as f:
-            json.dump(self.dataset_state, f)
-        _rename_from_tmp(self.model_state_path)
-        _rename_from_tmp(self.opt_state_path)
-        _rename_from_tmp(self.step_state_path)
-        _rename_from_tmp(self.dataset_state_path)
+
+class DistillationTrainLoop(TrainLoopBase):
+    def __init__(self, *, teacher: nn.Module, **kwargs):
+        super().__init__(**kwargs)
+        self.teacher = teacher
+
+    def compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
+        images = torch.stack([x.image for x in batch], dim=0).to(self.device)
+        with torch.no_grad():
+            target_probs = F.softmax(self.teacher(images)["price_bin"], dim=-1)
+        price_targets = torch.tensor(
+            [bin_price(x.price) for x in batch], device=self.device
+        )
+        outputs = self.model(images)
+        price_ce = F.cross_entropy(outputs["price_bin"], target_probs)
+        acc = torch.mean((outputs["price_bin"].argmax(-1) == price_targets).float())
+        return dict(
+            price_ce=price_ce,
+            price_acc=acc,
+            loss=price_ce,
+        )
 
 
 class LossAverage:
