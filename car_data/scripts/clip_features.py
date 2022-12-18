@@ -4,6 +4,7 @@ filtering.
 """
 
 import argparse
+import itertools
 import os
 from collections import defaultdict
 from typing import Iterator, List, Tuple
@@ -29,7 +30,12 @@ def main():
     )
 
     print("reading paths...")
-    listing = sorted(os.listdir(args.image_dir))
+    prefixes = ["".join(x) for x in itertools.product(*(["0123456789abcdef"] * 2))]
+    listing = sorted(
+        x
+        for prefix in prefixes
+        for x in os.listdir(os.path.join(args.image_dir, prefix))
+    )
     print("iterating...")
     for shard_id, filenames in group_by_prefix(listing, args.shard_digits):
         out_path = os.path.join(args.output_dir, f"{shard_id}.npz")
@@ -40,7 +46,7 @@ def main():
             device,
             model,
             preprocess,
-            [os.path.join(args.image_dir, x) for x in filenames],
+            [os.path.join(args.image_dir, x[:2], x) for x in filenames],
             batch_size=args.batch_size,
         )
         np.savez(out_path + ".tmp.npz", features=features, filenames=filenames)
