@@ -8,6 +8,7 @@ setup(
     install_requires=[
         "torch",
         "torchvision",
+        "sk2torch",
         "clip @ git+https://github.com/openai/CLIP.git",
     ],
     author="Alex Nichol",
