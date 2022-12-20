@@ -2,6 +2,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterator, List
 
 import torch
@@ -10,7 +11,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from .dataset import CarImage, looping_loader
-from .losses import bin_price
+from .losses import MEDIAN_PRICE_SCALE, bin_price
 
 
 class TrainLoopBase(ABC):
@@ -152,17 +153,13 @@ class TrainLoopBase(ABC):
 class TrainLoop(TrainLoopBase):
     def compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
         images = torch.stack([x.image for x in batch], dim=0).to(self.device)
-        price_targets = torch.tensor(
-            [bin_price(x.price) for x in batch], device=self.device
-        )
+        targets = PriceTargets.from_batch(batch, self.device)
         outputs = self.model(images)
-        price_ce = F.cross_entropy(outputs["price_bin"], price_targets)
-        acc = torch.mean((outputs["price_bin"].argmax(-1) == price_targets).float())
-        return dict(
-            price_ce=price_ce,
-            price_acc=acc,
-            loss=price_ce,
+        metrics = targets.metrics(outputs)
+        metrics["loss"] = metrics["price_ce"] + (
+            metrics["price_mae"] / MEDIAN_PRICE_SCALE
         )
+        return metrics
 
 
 class DistillationTrainLoop(TrainLoopBase):
@@ -172,18 +169,44 @@ class DistillationTrainLoop(TrainLoopBase):
 
     def compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
         images = torch.stack([x.image for x in batch], dim=0).to(self.device)
+        targets = PriceTargets.from_batch(batch, self.device)
         with torch.no_grad():
-            target_probs = F.softmax(self.teacher(images)["price_bin"], dim=-1)
-        price_targets = torch.tensor(
-            [bin_price(x.price) for x in batch], device=self.device
-        )
+            teacher_out = self.teacher(images)
+            target_probs = F.softmax(teacher_out["price_bin"], dim=-1)
+            target_median = F.softmax(teacher_out["price_median"], dim=-1)
         outputs = self.model(images)
-        price_ce = F.cross_entropy(outputs["price_bin"], target_probs)
-        acc = torch.mean((outputs["price_bin"].argmax(-1) == price_targets).float())
+        metrics = targets.metrics(outputs)
+        metrics["teacher_ce"] = F.cross_entropy(outputs["price_bin"], target_probs)
+        metrics["teacher_mae"] = (
+            (outputs["price_median"].squeeze(-1) - target_median).abs().mean()
+        )
+        metrics["loss"] = (
+            metrics["teacher_ce"] + metrics["teacher_mae"] / MEDIAN_PRICE_SCALE
+        )
+        return metrics
+
+
+@dataclass
+class PriceTargets:
+    prices: torch.Tensor
+    bins: torch.Tensor
+
+    @classmethod
+    def from_batch(cls, batch: List[CarImage], device: torch.device) -> "PriceTargets":
+        cls(
+            prices=torch.tensor(
+                [x.price for x in batch], dtype=torch.float32, device=device
+            ),
+            bins=torch.tensor([bin_price(x.price) for x in batch], device=device),
+        )
+
+    def metrics(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         return dict(
-            price_ce=price_ce,
-            price_acc=acc,
-            loss=price_ce,
+            price_ce=F.cross_entropy(outputs["price_bin"], self.bins),
+            price_acc=(outputs["price_bin"].argmax(-1) == self.bins).float().mean(),
+            price_mae=(
+                (outputs["price_median"].squeeze(-1) - self.prices).abs().float().mean()
+            ),
         )
 
 
