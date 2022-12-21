@@ -185,6 +185,30 @@ impl Database {
         .await
     }
 
+    pub async fn completed_dedups<C: 'static + Send + FromIterator<String>>(
+        &self,
+    ) -> anyhow::Result<C> {
+        self.with_conn(move |tx| {
+            let mut stmt = tx.prepare("SELECT hash FROM phashes")?;
+            let results = stmt.query_map((), |row| Ok(row.get(0)?))?;
+            Ok(results.into_iter().collect::<rusqlite::Result<C>>()?)
+        })
+        .await
+    }
+
+    pub async fn get_attempt_ids<C: 'static + Send + FromIterator<String>>(
+        &self,
+        website: &str,
+    ) -> anyhow::Result<C> {
+        let website = website.to_owned();
+        self.with_conn(move |tx| {
+            let mut stmt = tx.prepare("SELECT website_id FROM attempt_ids WHERE website = ?1")?;
+            let results = stmt.query_map((website,), |row| Ok(row.get(0)?))?;
+            Ok(results.into_iter().collect::<rusqlite::Result<C>>()?)
+        })
+        .await
+    }
+
     pub fn unique_phashes(&self) -> Receiver<anyhow::Result<(String, Listing)>> {
         let (tx, rx) = bounded(100);
         let db_clone = self.clone();
