@@ -8,6 +8,7 @@ mod dedup_images;
 mod export_data;
 mod image_util;
 mod kbb;
+mod make_models;
 mod parse_util;
 mod scrape_kbb;
 mod task_queue;
@@ -28,6 +29,10 @@ enum Args {
         #[clap(flatten)]
         args: export_data::Args,
     },
+    MakeModels {
+        #[clap(flatten)]
+        args: make_models::Args,
+    },
 }
 
 #[tokio::main]
@@ -37,6 +42,7 @@ async fn main() -> ExitCode {
         Args::ScrapeKbb { args } => scrape_kbb::main(args).await,
         Args::DedupImages { args } => dedup_images::main(args).await,
         Args::ExportData { args } => export_data::main(args).await,
+        Args::MakeModels { args } => make_models::main(args).await,
     } {
         eprintln!("{}", e);
         ExitCode::FAILURE

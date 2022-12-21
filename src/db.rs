@@ -168,6 +168,23 @@ impl Database {
         .await
     }
 
+    pub async fn make_model_counts(&self) -> anyhow::Result<Vec<(String, String, i64)>> {
+        self.with_conn(move |tx| {
+            let mut stmt = tx.prepare(
+                "SELECT
+                    make,
+                    model,
+                    COUNT(*)
+                FROM listings
+                GROUP BY make, model
+                ORDER BY -COUNT(*)",
+            )?;
+            let results = stmt.query_map((), |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+            Ok(results.into_iter().collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
     pub fn unique_phashes(&self) -> Receiver<anyhow::Result<(String, Listing)>> {
         let (tx, rx) = bounded(100);
         let db_clone = self.clone();
