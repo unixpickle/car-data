@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--index_path", type=str, required=True)
     parser.add_argument("--feature_dir", type=str, required=True)
     parser.add_argument("--classifier_path", type=str, required=True)
+    parser.add_argument("--threshold", type=float, default=-0.5)
     parser.add_argument("--output_path", type=str, required=True)
     args = parser.parse_args()
 
@@ -36,7 +37,12 @@ def main():
         features = torch.from_numpy(obj["features"]).float().to(device)
         ids = obj["filenames"].tolist()
         with torch.no_grad():
-            preds = model(features).cpu().numpy().tolist()
+            preds = (
+                (model.decision_function(features) > args.threshold)
+                .cpu()
+                .numpy()
+                .tolist()
+            )
         total_ids += len(ids)
         for pred, id in zip(preds, ids):
             if pred:
