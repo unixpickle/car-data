@@ -5,7 +5,7 @@ Train a simple classifier on pooled features.
 import argparse
 import os
 from collections import defaultdict
-from typing import Iterator, List, Tuple
+from typing import Any, Iterator, List, Tuple
 
 import clip
 import numpy as np
@@ -52,8 +52,14 @@ def main():
     clf = SVC(random_state=0)
 
     print("validating...")
-    scores = cross_val_score(clf, inputs, labels, cv=5)
-    print(f"acc: {np.mean(scores)} (std={np.std(scores)})")
+    preds = cross_val_preds(clf, inputs, labels, folds=10)
+    for threshold in np.linspace(-2.0, 2.0, num=31):
+        acc = np.mean((preds > threshold) == labels)
+        false_neg = np.mean(((preds > threshold) != labels)[labels])
+        filter_frac = np.mean(((preds > threshold) == labels)[~labels])
+        print(
+            f"threshold {threshold:.02}: acc={acc:.03f} false_neg={false_neg:.03f} filter_frac={filter_frac:.03f}"
+        )
 
     print("training...")
     clf.fit(inputs, labels)
@@ -61,6 +67,26 @@ def main():
     print("saving...")
     save_model = torch.jit.script(sk2torch.wrap(clf).float())
     torch.jit.save(save_model, args.model_out)
+
+
+def cross_val_preds(
+    model: Any, xs: np.ndarray, ys: np.ndarray, folds: int
+) -> np.ndarray:
+    """
+    Compute out-of-fold decision function outputs for all of the samples.
+    """
+    perm = np.random.permutation(len(xs))
+    chunk_size = len(xs) // folds
+    chunk_sizes = [chunk_size + int(i < len(xs) % folds) for i in range(folds)]
+    index_chunks = np.split(perm, np.cumsum(chunk_sizes)[:-1])
+
+    all_outs = np.zeros(len(xs), dtype=np.float32)
+    for val_indices in index_chunks:
+        mask = np.ones(len(xs), dtype=bool)
+        mask[val_indices] = False
+        model.fit(xs[mask], ys[mask])
+        all_outs[~mask] = model.decision_function(xs[~mask])
+    return all_outs
 
 
 def list_dirs(dirs: List[str]) -> Iterator[str]:
