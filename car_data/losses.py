@@ -35,3 +35,13 @@ def bin_price(price: float) -> int:
 
 def bin_prices(prices: np.ndarray) -> np.ndarray:
     return np.searchsorted(PRICE_CUTOFFS, prices)
+
+
+def bin_make_model(make: str, model: str) -> int:
+    return MAKE_MODEL_TO_INDEX.get((make, model), len(MAKE_MODEL_TO_INDEX))
+
+
+def bin_year(year: int) -> int:
+    if year not in YEARS:
+        return len(YEARS)
+    return YEARS.index(year)
