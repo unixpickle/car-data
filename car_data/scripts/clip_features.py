@@ -60,7 +60,6 @@ def main():
                 model,
                 preprocess,
                 [os.path.join(args.image_dir, x[:2], x) for x in filenames],
-                old_features=old_features,
                 batch_size=args.batch_size,
             )
             out_dict = combine_existing_features(old_features, filenames, features)
