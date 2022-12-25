@@ -2,7 +2,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List
 
 import torch
 import torch.nn as nn
@@ -28,7 +28,6 @@ class TrainLoopBase(ABC):
         weight_decay: float,
         model: nn.Module,
         device: torch.device,
-        model_init_fn: Callable[[nn.Module], Any] = (lambda _: None),
     ):
         self.index_path = index_path
         self.image_dir = image_dir
@@ -79,8 +78,6 @@ class TrainLoopBase(ABC):
             model.load_state_dict(
                 torch.load(self.model_state_path, map_location=device)
             )
-        else:
-            model_init_fn(model)
 
         self.step = 0
         self.step_state_path = os.path.join(save_dir, "step.json")
