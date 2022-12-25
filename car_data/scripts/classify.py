@@ -24,6 +24,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = create_model(args.model_name, device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+    model.eval()
 
     transform = transforms.Compose(
         [
