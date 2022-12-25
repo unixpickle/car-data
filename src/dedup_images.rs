@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs::rename,
     path::{Path, PathBuf},
 };
@@ -52,13 +53,20 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         }
     });
 
+    let db = Database::open(&args.db_path).await?;
+    let completed: HashSet<String> = db.completed_dedups().await?;
+
     let (hash_tx, hash_rx) = async_channel::bounded(100);
     for _ in 0..args.concurrency {
         let path_rx = path_rx.clone();
         let hash_tx = hash_tx.clone();
+        let completed = completed.clone();
         let args = args.clone();
         spawn_blocking(move || {
             while let Ok(path) = path_rx.recv_blocking() {
+                if completed.contains(&path_basename(&path)) {
+                    continue;
+                }
                 match hash_and_downsample(&args, &path) {
                     Ok(hash) => hash_tx.send_blocking((path, hash)).unwrap(),
                     Err(e) => eprintln!("error from {:?}: {}", path, e),
@@ -68,7 +76,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     }
     drop(hash_tx);
 
-    let db = Database::open(&args.db_path).await?;
     let mut num_inserted: u64 = 0;
     while let Some(objs) = recv_at_least_one(&hash_rx).await {
         let batch_size = objs.len();

@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     db::{hash_image_url, Database},
@@ -46,6 +49,9 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let db = Database::open(&args.db_path).await?;
     println!("creating permutation...");
     let perm = generate_permutation(args.min_id, args.max_id);
+    println!("filtering permutation...");
+    let used_ids: HashSet<_> = db.get_attempt_ids(KBB_WEBSITE_NAME).await?;
+    perm.filter(|x| !used_ids.contains(&format!("{}", x))).await;
     println!("scraping...");
 
     let (tx, mut rx) = channel(args.concurrency);
