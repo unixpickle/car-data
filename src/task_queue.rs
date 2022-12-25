@@ -1,7 +1,7 @@
 // Adapted from map-dump:
 // https://github.com/unixpickle/map-dump/blob/e5997309cd40a32c63d5fa461746d9dabc1dfea2/src/task_queue.rs
 
-use std::sync::Arc;
+use std::{mem::take, ops::DerefMut, sync::Arc};
 
 use tokio::sync::Mutex;
 
@@ -39,5 +39,10 @@ impl<T: Send> TaskQueue<T> {
 
     pub fn orig_len(&self) -> usize {
         self.orig_len
+    }
+
+    pub async fn filter<P: FnMut(&T) -> bool>(&self, p: P) {
+        let mut locked = self.queue.lock().await;
+        *locked = take(locked.deref_mut()).into_iter().filter(p).collect();
     }
 }
