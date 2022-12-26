@@ -211,3 +211,36 @@ def _tmp_path(orig_path: str) -> str:
 
 def _rename_from_tmp(path: str) -> str:
     os.rename(_tmp_path(path), path)
+
+
+def add_training_args(parser: argparse.ArgumentParser):
+    parser.add_argument("--loss_weights", type=str, default="default")
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--weight_decay", type=float, default=1e-3)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--microbatch", type=int, default=0)
+    parser.add_argument("--eval_interval", type=int, default=5)
+    parser.add_argument("--save_interval", type=int, default=1000)
+    parser.add_argument("--use_data_aug", action="store_true")
+    parser.add_argument("--index_path", type=str, required=True)
+    parser.add_argument("--image_dir", type=str, required=True)
+    parser.add_argument("--save_dir", type=str, required=True)
+
+
+def training_args_dict(args: argparse.Namespace) -> Dict[str, Any]:
+    res = {}
+    for k in [
+        "lr",
+        "weight_decay",
+        "batch_size",
+        "microbatch",
+        "eval_interval",
+        "save_interval",
+        "use_data_aug",
+        "index_path",
+        "image_dir",
+        "save_dir",
+    ]:
+        res[k] = getattr(args, k)
+    res["loss_weights"] = LossWeights.parse(args.loss_weights)
+    return res
