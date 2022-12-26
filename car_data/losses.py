@@ -10,14 +10,41 @@ from .dataset import CarImage
 
 
 @dataclass
-class PriceTargets:
+class LossWeights:
+    price_ce: float = 1.0
+    price_mae: float = 1.0
+    year_ce: float = 1.0
+    make_model_ce: float = 1.0
+
+    @classmethod
+    def parse(cls, x: str) -> "LossWeights":
+        presets = {
+            "default": LossWeights(),
+            "price_ce_only": LossWeights(
+                price_ce=1.0, price_mae=0.0, year_ce=0.0, make_model_ce=0.0
+            ),
+        }
+        if x in presets:
+            return presets[x]
+
+        res = {}
+        for part in x.split(","):
+            pair = part.split("=")
+            if len(pair) != 2:
+                raise ValueError(f"expected pairs of k=v, but got token `{pair}`")
+            res[pair[0]] = float(pair[1])
+        return cls(**res)
+
+
+@dataclass
+class LossTargets:
     prices: torch.Tensor
     price_bins: torch.Tensor
     years: torch.Tensor
     make_models: torch.Tensor
 
     @classmethod
-    def from_batch(cls, batch: List[CarImage], device: torch.device) -> "PriceTargets":
+    def from_batch(cls, batch: List[CarImage], device: torch.device) -> "LossTargets":
         return cls(
             prices=torch.tensor(
                 [x.price for x in batch], dtype=torch.float32, device=device
@@ -30,7 +57,7 @@ class PriceTargets:
         )
 
     @classmethod
-    def from_model_out(cls, outputs: Dict[str, torch.Tensor]) -> "PriceTargets":
+    def from_model_out(cls, outputs: Dict[str, torch.Tensor]) -> "LossTargets":
         return cls(
             prices=outputs["price_median"],
             price_bins=F.softmax(outputs["price_bin"], dim=-1),
@@ -38,7 +65,9 @@ class PriceTargets:
             make_models=F.softmax(outputs["make_model"], dim=-1),
         )
 
-    def metrics(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def metrics(
+        self, weights: LossWeights, outputs: Dict[str, torch.Tensor]
+    ) -> torch.Tensor:
         metrics = dict(
             price_ce=F.cross_entropy(outputs["price_bin"], self.price_bins),
             price_acc=(
@@ -49,10 +78,10 @@ class PriceTargets:
             make_model_ce=F.cross_entropy(outputs["make_model"], self.make_models),
         )
         metrics["loss"] = (
-            metrics["price_ce"]
-            + (metrics["price_mae"] / MEDIAN_PRICE_SCALE)
-            + metrics["year_ce"]
-            + metrics["make_model_ce"]
+            (weights.price_ce * metrics["price_ce"])
+            + (weights.price_mae * metrics["price_mae"] / MEDIAN_PRICE_SCALE)
+            + (weights.year_ce * metrics["year_ce"])
+            + (weights.make_model_ce * metrics["make_model_ce"])
         )
         return metrics
 
