@@ -15,11 +15,11 @@ def looping_loader(
     image_dir: str,
     batch_size: int,
     train: bool = True,
-    center_crop: bool = True,
+    use_data_aug: bool = False,
     last_seen_phash: Optional[str] = None,
 ) -> Iterator[List["CarImage"]]:
     dataset = CarImageDataset(
-        index_path, image_dir, train=train, center_crop=center_crop
+        index_path, image_dir, train=train, use_data_aug=use_data_aug
     )
     sampler = CarImageDatasetSampler(dataset, last_seen_phash=last_seen_phash)
     loader = DataLoader(
@@ -49,7 +49,7 @@ class CarImageDataset(Dataset):
         index_path: str,
         image_dir: str,
         train: bool = True,
-        center_crop: bool = True,
+        use_data_aug: bool = False,
     ):
         super().__init__()
         self.index_path = index_path
@@ -70,15 +70,20 @@ class CarImageDataset(Dataset):
             self.makes = obj["makes"][ordering].tolist()
             self.models = obj["models"][ordering].tolist()
             self.years = obj["years"][ordering]
+        if use_data_aug:
+            image_ops = [
+                transforms.RandomResizedCrop(224, scale=(0.8, 1.0), ratio=(1.0, 1.0)),
+                transforms.RandomHorizontalFlip(),
+                transforms.ColorJitter(0.4, 0.4, 0.4),
+            ]
+        else:
+            image_ops = [
+                transforms.Resize(224),
+                transforms.CenterCrop(224),
+            ]
         self.transform = transforms.Compose(
             [
-                (
-                    transforms.CenterCrop(224)
-                    if center_crop
-                    else transforms.RandomResizedCrop(
-                        224, scale=(0.8, 1.0), ratio=(1.0, 1.0)
-                    )
-                ),
+                *image_ops,
                 transforms.ToTensor(),
                 transforms.Normalize(
                     (0.48145466, 0.4578275, 0.40821073),
