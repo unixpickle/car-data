@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from abc import ABC, abstractmethod
@@ -10,7 +11,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from .dataset import CarImage, looping_loader
-from .losses import PriceTargets
+from .losses import LossTargets, LossWeights
 
 
 class TrainLoopBase(ABC):
@@ -19,6 +20,7 @@ class TrainLoopBase(ABC):
         *,
         index_path: str,
         image_dir: str,
+        use_data_aug: bool,
         save_dir: str,
         batch_size: int,
         microbatch: int,
@@ -28,9 +30,11 @@ class TrainLoopBase(ABC):
         weight_decay: float,
         model: nn.Module,
         device: torch.device,
+        loss_weights: LossWeights,
     ):
         self.index_path = index_path
         self.image_dir = image_dir
+        self.use_data_aug = use_data_aug
         self.save_dir = save_dir
         self.batch_size = batch_size
         self.microbatch = microbatch
@@ -38,6 +42,7 @@ class TrainLoopBase(ABC):
         self.save_interval = save_interval
         self.model = model
         self.device = device
+        self.loss_weights = loss_weights
 
         os.makedirs(save_dir, exist_ok=True)
 
@@ -54,6 +59,7 @@ class TrainLoopBase(ABC):
             image_dir,
             batch_size=self.batch_size,
             train=True,
+            use_data_aug=use_data_aug,
             last_seen_phash=self.dataset_state["train"],
         )
         self.test_dataset = looping_loader(
@@ -149,9 +155,9 @@ class TrainLoopBase(ABC):
 class TrainLoop(TrainLoopBase):
     def compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
         images = torch.stack([x.image for x in batch], dim=0).to(self.device)
-        targets = PriceTargets.from_batch(batch, self.device)
+        targets = LossTargets.from_batch(batch, self.device)
         outputs = self.model(images)
-        return targets.metrics(outputs)
+        return targets.metrics(self.loss_weights, outputs)
 
 
 class DistillationTrainLoop(TrainLoopBase):
@@ -161,15 +167,18 @@ class DistillationTrainLoop(TrainLoopBase):
 
     def compute_losses(self, batch: List[CarImage]) -> Dict[str, torch.Tensor]:
         images = torch.stack([x.image for x in batch], dim=0).to(self.device)
-        targets = PriceTargets.from_batch(batch, self.device)
+        targets = LossTargets.from_batch(batch, self.device)
         with torch.no_grad():
             teacher_out = self.teacher(images)
-            teacher_targets = PriceTargets.from_model_out(teacher_out)
+            teacher_targets = LossTargets.from_model_out(teacher_out)
         outputs = self.model(images)
         with torch.no_grad():
-            metrics = targets.metrics(outputs)
+            metrics = targets.metrics(self.loss_weights, outputs)
         metrics.update(
-            {f"teacher_{k}": v for k, v in teacher_targets.metrics(outputs).item()}
+            {
+                f"teacher_{k}": v
+                for k, v in teacher_targets.metrics(self.loss_weights, outputs).item()
+            }
         )
         metrics["loss"] = metrics.pop("teacher_loss")
         return metrics
