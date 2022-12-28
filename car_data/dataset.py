@@ -33,6 +33,30 @@ def looping_loader(
         yield from loader
 
 
+def image_transform(use_data_aug: bool) -> transforms.Compose:
+    if use_data_aug:
+        image_ops = [
+            transforms.RandomResizedCrop(224, scale=(0.8, 1.0), ratio=(1.0, 1.0)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(0.4, 0.4, 0.4),
+        ]
+    else:
+        image_ops = [
+            transforms.Resize(224),
+            transforms.CenterCrop(224),
+        ]
+    return transforms.Compose(
+        [
+            *image_ops,
+            transforms.ToTensor(),
+            transforms.Normalize(
+                (0.48145466, 0.4578275, 0.40821073),
+                (0.26862954, 0.26130258, 0.27577711),
+            ),
+        ]
+    )
+
+
 @dataclass
 class CarImage:
     image: torch.Tensor
@@ -70,27 +94,7 @@ class CarImageDataset(Dataset):
             self.makes = obj["makes"][ordering].tolist()
             self.models = obj["models"][ordering].tolist()
             self.years = obj["years"][ordering]
-        if use_data_aug:
-            image_ops = [
-                transforms.RandomResizedCrop(224, scale=(0.8, 1.0), ratio=(1.0, 1.0)),
-                transforms.RandomHorizontalFlip(),
-                transforms.ColorJitter(0.4, 0.4, 0.4),
-            ]
-        else:
-            image_ops = [
-                transforms.Resize(224),
-                transforms.CenterCrop(224),
-            ]
-        self.transform = transforms.Compose(
-            [
-                *image_ops,
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    (0.48145466, 0.4578275, 0.40821073),
-                    (0.26862954, 0.26130258, 0.27577711),
-                ),
-            ]
-        )
+        self.transform = image_transform(use_data_aug)
 
     def __len__(self) -> int:
         return len(self.phashes)
