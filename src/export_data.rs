@@ -10,6 +10,9 @@ use crate::{
 
 #[derive(Clone, Parser)]
 pub struct Args {
+    #[clap(long, value_parser, default_value_t = 1)]
+    min_images: usize,
+
     #[clap(value_parser)]
     db_path: String,
 
@@ -33,13 +36,15 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     while let Ok(item) = results.recv().await {
         let (phash, listing) = item?;
         seen += 1;
-        if let Some(dollars) = get_dollar_amount(listing.price) {
-            used += 1;
-            phashes.push(phash);
-            prices.push(dollars);
-            makes.push(listing.make.unwrap_or_default());
-            models.push(listing.model.unwrap_or_default());
-            years.push(listing.year.unwrap_or_default());
+        if listing.image_urls.map(|x| x.len()).unwrap_or_default() >= args.min_images {
+            if let Some(dollars) = get_dollar_amount(listing.price) {
+                used += 1;
+                phashes.push(phash);
+                prices.push(dollars);
+                makes.push(listing.make.unwrap_or_default());
+                models.push(listing.model.unwrap_or_default());
+                years.push(listing.year.unwrap_or_default());
+            }
         }
         if seen % 1000 == 0 {
             print_stats(seen, used);
