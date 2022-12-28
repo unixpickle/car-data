@@ -57,7 +57,7 @@ class OutputLayer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return dict(
             price_bin=self.price_bin(x),
-            price_median=self.price_median(x)[..., 0] / MEDIAN_PRICE_SCALE,
+            price_median=self.price_median(x)[..., 0] * MEDIAN_PRICE_SCALE,
             make_model=self.make_model(x),
             year=self.year(x),
         )
