@@ -10,6 +10,7 @@ setup(
         "torchvision",
         "sk2torch",
         "clip @ git+https://github.com/openai/CLIP.git",
+        "pycairo",
     ],
     author="Alex Nichol",
     author_email="unixpickle@gmail.com",
