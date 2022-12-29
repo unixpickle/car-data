@@ -60,7 +60,7 @@ class OutputLayer(nn.Module):
         self.make_model = nn.Linear(n_features, NUM_MAKE_MODELS, device=device)
         self.year = nn.Linear(n_features, NUM_YEARS, device=device)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         return dict(
             price_bin=self.price_bin(x),
             price_median=self.price_median(x)[..., 0] * MEDIAN_PRICE_SCALE,
