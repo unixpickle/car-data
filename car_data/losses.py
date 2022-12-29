@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 import numpy as np
 import torch
@@ -42,6 +42,15 @@ class LossTargets:
     price_bins: torch.Tensor
     years: torch.Tensor
     make_models: torch.Tensor
+
+    @classmethod
+    def cat(cls, items: Sequence["LossTargets"]) -> "LossTargets":
+        return LossTargets(
+            prices=torch.cat([x.prices for x in items]),
+            price_bins=torch.cat([x.price_bins for x in items]),
+            years=torch.cat([x.years for x in items]),
+            make_models=torch.cat([x.make_models for x in items]),
+        )
 
     @classmethod
     def from_batch(cls, batch: List[CarImage], device: torch.device) -> "LossTargets":
