@@ -24,6 +24,9 @@ class CLIPModel(nn.Module):
         self.clip.float()
         self.output = OutputLayer(512, device=device)
 
+    def output_layer(self) -> "OutputLayer":
+        return self.output
+
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         h = self.clip.encode_image(x)
         return self.output(h)
@@ -41,6 +44,9 @@ class MobileNetV2Model(nn.Module):
         if download_root is not None:
             torch.hub.set_dir(backup_dir)
         self.model.classifier[1] = OutputLayer(1280, device=device)
+
+    def output_layer(self) -> "OutputLayer":
+        return self.model.classifier[1]
 
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         return self.model(x)
@@ -61,3 +67,10 @@ class OutputLayer(nn.Module):
             make_model=self.make_model(x),
             year=self.year(x),
         )
+
+    def scale_outputs(self, scales: Dict[str, float]):
+        with torch.no_grad():
+            for key, scale in scales.items():
+                layer = getattr(self, key)
+                layer.weight.mul_(scale)
+                layer.bias.mul_(scale)
