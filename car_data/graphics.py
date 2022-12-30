@@ -3,8 +3,11 @@ APIs for drawing predictions with Cairo.
 """
 
 import io
+import math
+import os
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from contextlib import contextmanager
+from typing import Dict, Iterator, List
 
 import cairo
 import numpy as np
@@ -18,10 +21,32 @@ PANEL_WIDTH = 550
 IMAGE_SIZE = 224
 
 
+@contextmanager
+def open_context(
+    path: str, width: int, height: int, write: bool = True
+) -> Iterator[cairo.Context]:
+    _, ext = os.path.splitext(path)
+    if ext.lower() == ".svg":
+        with cairo.SVGSurface(
+            io.BytesIO() if not write else path, width, height
+        ) as surface:
+            ctx = cairo.Context(surface)
+            yield ctx
+    else:
+        with cairo.ImageSurface(
+            cairo.Format.RGB24, math.ceil(width), math.ceil(height)
+        ) as surface:
+            ctx = cairo.Context(surface)
+            yield ctx
+            if write:
+                surface.write_to_png(path)
+
+
 def prediction_element(
     ctx: cairo.Context, idx: int, img: Image.Image, outputs: Dict[str, torch.Tensor]
 ) -> "Element":
     content = VStack(
+        Empty(width=0.0, height=16.0),
         pad_to_width(ImageElement(crop_image(img)), PANEL_WIDTH),
         Padded(Separator(PANEL_WIDTH - 40.0), horiz=20, vert=16),
         pad_to_width(

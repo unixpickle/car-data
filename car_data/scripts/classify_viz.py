@@ -11,12 +11,10 @@ from typing import List
 import cairo
 import numpy as np
 import torch
-import torch.nn.functional as F
 from PIL import Image
 
-from car_data.constants import MAKES_MODELS, PRICE_BIN_LABELS, YEARS
 from car_data.dataset import image_transform
-from car_data.graphics import prediction_element
+from car_data.graphics import open_context, prediction_element
 from car_data.model import create_model
 
 PANEL_WIDTH = 550
@@ -37,23 +35,18 @@ def main():
     model.eval()
     transform = image_transform(False)
 
-    with cairo.SVGSurface(
-        io.BytesIO(), len(args.images) * PANEL_WIDTH, 10000
-    ) as surface:
-        ctx = cairo.Context(surface)
-
+    with open_context(
+        args.output, len(args.images) * PANEL_WIDTH, 10000, write=False
+    ) as tmp_ctx:
         panels = []
         for i, img_path in enumerate(args.images):
             img = Image.open(img_path).convert("RGB")
             outputs = model(transform(img)[None].to(device))
-            panels.append(prediction_element(ctx, i, img, outputs))
+            panels.append(prediction_element(tmp_ctx, i, img, outputs))
         all_content = HStack(*panels)
 
-        with cairo.SVGSurface(
-            args.output, all_content.width, all_content.height
-        ) as surface:
-            ctx = cairo.Context(surface)
-            all_content.draw_at(ctx, 0, 0)
+    with open_context(args.output, all_content.width, all_content.height) as ctx:
+        all_content.draw_at(ctx, 0, 0)
 
 
 def crop_image(img: Image.Image) -> Image.Image:
