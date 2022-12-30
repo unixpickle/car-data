@@ -18,24 +18,8 @@ from car_data.constants import MAKES_MODELS, PRICE_BIN_LABELS, YEARS
 from car_data.dataset import image_transform
 from car_data.model import create_model
 
-PANEL_WIDTH = 512
-IMAGE_PADDING = 16
+PANEL_WIDTH = 550
 IMAGE_SIZE = 224
-SEPARATOR_HEIGHT = 16
-TEXT_HEIGHT = 48
-PROB_BIN_HEIGHT = 64
-NUM_PRICE_BINS = 4
-NUM_MAKE_MODEL_BINS = 5
-NUM_YEAR_BINS = 4
-BOTTOM_PADDING = 16
-
-PANEL_HEIGHT = (
-    PANEL_WIDTH
-    + SEPARATOR_HEIGHT * 4
-    + TEXT_HEIGHT
-    + PROB_BIN_HEIGHT * (max(NUM_PRICE_BINS, NUM_YEAR_BINS) + NUM_MAKE_MODEL_BINS)
-    + BOTTOM_PADDING
-)
 
 
 def main():
@@ -66,12 +50,12 @@ def main():
                 Padded(Separator(PANEL_WIDTH - 40.0), horiz=20, vert=16),
                 pad_to_width(
                     HStack(
-                        Text(ctx, "Price prediction:", font_size=24.0),
+                        Text(ctx, "Price prediction:", font_size=30.0),
                         Empty(width=10, height=1),
                         Text(
                             ctx,
                             f"${int(round(outputs['price_median'].item()))}",
-                            font_size=24.0,
+                            font_size=30.0,
                             bold=True,
                         ),
                     ),
@@ -293,7 +277,7 @@ class ProbabilityBar(Element):
     def __init__(
         self, ctx: cairo.Context, width: float, title: str, probability: float
     ):
-        title_element = Text(ctx, title, font_size=18.0)
+        title_element = Text(ctx, title, font_size=22.0)
         prob_text = Text(ctx, f"{(probability*100):2.1f}%", font_size=18.0)
         super().__init__(width, title_element.height + 30)
         self.probability = probability
@@ -328,7 +312,7 @@ class TopN(VStack):
         n: int,
     ):
         elements = []
-        elements.append(pad_to_width(Text(ctx, title, 20, bold=True), width))
+        elements.append(pad_to_width(Text(ctx, title, font_size=24, bold=True), width))
         elements.append(Padded(Separator(width - 32), horiz=16, vert=8))
         bars = []
         for i in np.argsort(probs)[::-1][:n]:
@@ -336,7 +320,7 @@ class TopN(VStack):
         max_prob_text_width = max(bar.prob_text.width for bar in bars)
         for bar in bars:
             bar.prob_text.width = max_prob_text_width
-            elements.append(Padded(bar, horiz=20))
+            elements.append(Padded(bar, horiz=20, vert=4))
         super().__init__(*elements)
 
 
