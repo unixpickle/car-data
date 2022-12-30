@@ -1,12 +1,10 @@
 """
-Create an SVG with a visual depiction of a model's predictions for a batch of
-input images.
+APIs for drawing predictions with Cairo.
 """
 
-import argparse
 import io
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Dict, List
 
 import cairo
 import numpy as np
@@ -15,45 +13,65 @@ import torch.nn.functional as F
 from PIL import Image
 
 from car_data.constants import MAKES_MODELS, PRICE_BIN_LABELS, YEARS
-from car_data.dataset import image_transform
-from car_data.graphics import prediction_element
-from car_data.model import create_model
 
 PANEL_WIDTH = 550
 IMAGE_SIZE = 224
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=str, default="viz.svg")
-    parser.add_argument("--model_name", type=str, default="clip")
-    parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("images", type=str, nargs="+")
-    args = parser.parse_args()
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = create_model(args.model_name, device)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
-    model.eval()
-    transform = image_transform(False)
-
-    with cairo.SVGSurface(
-        io.BytesIO(), len(args.images) * PANEL_WIDTH, 10000
-    ) as surface:
-        ctx = cairo.Context(surface)
-
-        panels = []
-        for i, img_path in enumerate(args.images):
-            img = Image.open(img_path).convert("RGB")
-            outputs = model(transform(img)[None].to(device))
-            panels.append(prediction_element(ctx, i, img, outputs))
-        all_content = HStack(*panels)
-
-        with cairo.SVGSurface(
-            args.output, all_content.width, all_content.height
-        ) as surface:
-            ctx = cairo.Context(surface)
-            all_content.draw_at(ctx, 0, 0)
+def prediction_element(
+    ctx: cairo.Context, idx: int, img: Image.Image, outputs: Dict[str, torch.Tensor]
+) -> "Element":
+    content = VStack(
+        pad_to_width(ImageElement(crop_image(img)), PANEL_WIDTH),
+        Padded(Separator(PANEL_WIDTH - 40.0), horiz=20, vert=16),
+        pad_to_width(
+            HStack(
+                Text(ctx, "Price prediction:", font_size=30.0),
+                Empty(width=10, height=1),
+                Text(
+                    ctx,
+                    f"${int(round(outputs['price_median'].item()))}",
+                    font_size=30.0,
+                    bold=True,
+                ),
+            ),
+            PANEL_WIDTH,
+        ),
+        Padded(Separator(PANEL_WIDTH - 40.0), horiz=20, vert=16),
+        Empty(width=PANEL_WIDTH, height=16),
+        HStack(
+            TopN(
+                ctx,
+                PANEL_WIDTH / 2,
+                "Price",
+                PRICE_BIN_LABELS,
+                F.softmax(outputs["price_bin"], dim=-1)[0].tolist(),
+                4,
+            ),
+            TopN(
+                ctx,
+                PANEL_WIDTH / 2,
+                "Year",
+                [str(year) for year in YEARS] + ["Unknown"],
+                F.softmax(outputs["year"], dim=-1)[0].tolist(),
+                4,
+            ),
+        ),
+        Empty(width=PANEL_WIDTH, height=16),
+        pad_to_width(
+            TopN(
+                ctx,
+                PANEL_WIDTH * 0.8,
+                "Make/Model",
+                [f"{make} {model}" for make, model in MAKES_MODELS] + ["Unknown"],
+                F.softmax(outputs["make_model"], dim=-1)[0].tolist(),
+                5,
+            ),
+            PANEL_WIDTH,
+        ),
+        Empty(width=PANEL_WIDTH, height=16),
+    )
+    return Overlay(Background(idx, PANEL_WIDTH, content.height), content)
 
 
 def crop_image(img: Image.Image) -> Image.Image:
@@ -276,7 +294,3 @@ class TopN(VStack):
 
 def pad_to_width(e: Element, width: float) -> Padded:
     return Padded(e, horiz=max(0, (width - e.width) / 2))
-
-
-if __name__ == "__main__":
-    main()
