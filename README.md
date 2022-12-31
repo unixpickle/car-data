@@ -10,17 +10,22 @@ I have tried fine-tuning some models on a discretized price prediction task, wit
 
 # Usage
 
-Compile with `cargo build --release`.
+First, you should:
 
-## Scraping kbb.com
+ * Compile the scraper with `cargo build --release`.
+ * Install the Python package with `pip install -e .`.
 
-To scrape `kbb.com` data, run:
+## Scraping data
+
+To run the scraper, run:
 
 ```
 ./target/release/car-data scrape-kbb /path/to/db.db /path/to/images
 ```
 
-To dedup and downsample the downloaded images, run:
+In the above command, `/path/to/db.db` is the path where the metadata will be saved. It is stored as a sqlite3 database. The `/path/to/images` directory will be used to dump raw images.
+
+To deduplicate and downsample the downloaded images, run:
 
 ```
 ./target/release/car-data dedup-images \
@@ -29,10 +34,12 @@ To dedup and downsample the downloaded images, run:
     /path/to/dedup
 ```
 
+From here on out, we will use the `/path/to/dedup` directory instead of `/path/to/images`, since the former directory contains all of the images we will actually use for training.
+
 To export the resulting dataset as a `.npz` file to load in Python, run:
 
 ```
-./target/release/car-data dedup-images \
+./target/release/car-data export-data \
     /path/to/db.db \
     /path/to/index.npz
 ```
