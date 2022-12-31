@@ -7,7 +7,7 @@ import math
 import os
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, Tuple
 
 import cairo
 import numpy as np
@@ -22,14 +22,10 @@ IMAGE_SIZE = 224
 
 
 @contextmanager
-def open_context(
-    path: str, width: int, height: int, write: bool = True
-) -> Iterator[cairo.Context]:
+def open_context(path: str, width: int, height: int) -> Iterator[cairo.Context]:
     _, ext = os.path.splitext(path)
     if ext.lower() == ".svg":
-        with cairo.SVGSurface(
-            io.BytesIO() if not write else path, width, height
-        ) as surface:
+        with cairo.SVGSurface(path, width, height) as surface:
             ctx = cairo.Context(surface)
             yield ctx
     else:
@@ -38,8 +34,24 @@ def open_context(
         ) as surface:
             ctx = cairo.Context(surface)
             yield ctx
-            if write:
-                surface.write_to_png(path)
+            surface.write_to_png(path)
+
+
+def prediction_element_size() -> Tuple[int, int]:
+    with cairo.SVGSurface(io.BytesIO(), PANEL_WIDTH, 10000) as surface:
+        ctx = cairo.Context(surface)
+        element = prediction_element(
+            ctx=ctx,
+            idx=0,
+            img=Image.fromarray(np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)),
+            outputs=dict(
+                price_median=torch.tensor(0.0),
+                price_bin=torch.zeros(1, len(PRICE_BIN_LABELS)),
+                make_model=torch.zeros(1, len(MAKES_MODELS) + 1),
+                year=torch.zeros(1, len(YEARS) + 1),
+            ),
+        )
+    return math.ceil(element.width), math.ceil(element.height)
 
 
 def prediction_element(
