@@ -32,7 +32,8 @@ def main():
     model.eval()
     transform = image_transform(False)
 
-    with open_context(args.output, *prediction_element_size()) as ctx:
+    width, height = prediction_element_size()
+    with open_context(args.output, width * len(args.images), height) as ctx:
         panels = []
         for i, img_path in enumerate(args.images):
             img = Image.open(img_path).convert("RGB")
