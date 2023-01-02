@@ -84,7 +84,11 @@ class LossTargets:
             ),
             price_mae=(outputs["price_median"] - self.prices).abs().float().mean(),
             year_ce=F.cross_entropy(outputs["year"], self.years),
+            year_acc=((outputs["year"].argmax(-1) == self.years).float().mean()),
             make_model_ce=F.cross_entropy(outputs["make_model"], self.make_models),
+            make_model_acc=(
+                (outputs["make_model"].argmax(-1) == self.make_models).float().mean()
+            ),
         )
         metrics["loss"] = (
             (weights.price_ce * metrics["price_ce"])

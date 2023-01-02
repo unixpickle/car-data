@@ -201,7 +201,7 @@ class LossAverage:
         key_strs = [f"step={step}"]
         avg = self.average()
         for k in sorted(avg.keys()):
-            key_strs.append(f"{k}={avg[k]:.04}")
+            key_strs.append(f"{k}={avg[k]:.04f}")
         return " ".join(key_strs)
 
 
